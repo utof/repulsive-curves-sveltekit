@@ -17,6 +17,20 @@
 		canvas.height = window.innerHeight;
 	}
 
+	function computeCircleEnergy(circleIndex) {
+		let energy = 0;
+		for (let [i, j] of edges) {
+			if (i !== circleIndex && j !== circleIndex) continue;
+
+			let y_i = [circles[i].x, circles[i].y];
+			let y_j = [circles[j].x, circles[j].y];
+			let segmentLength = math.distance(y_i, y_j);
+			let k_value = k_alpha_beta(y_i, y_j, alpha, beta);
+			energy += k_value * segmentLength * segmentLength;
+		}
+		return energy;
+	}
+
 	function generateCircles() {
 		numberOfCircles = Math.floor(Math.random() * 4) + 2;
 		circles = [];
@@ -25,7 +39,7 @@
 			circles.push({
 				x: Math.random() * canvas.width,
 				y: Math.random() * canvas.height,
-				radius: Math.random() * 20 + 10,
+				radius: 10,
 				color: `hsl(${Math.random() * 360}, 70%, 50%)`
 			});
 		}
@@ -113,15 +127,23 @@
 			ctx.stroke();
 		});
 
-		// Draw circles
-		circles.forEach((circle) => {
+		// Draw circles and halos
+		circles.forEach((circle, index) => {
+			// Draw circle
 			ctx.beginPath();
 			ctx.arc(circle.x, circle.y, circle.radius, 0, 2 * Math.PI);
 			ctx.fillStyle = circle.color;
 			ctx.fill();
+
+			// Compute and draw halo
+			let energy = computeCircleEnergy(index);
+			let haloRadius = circle.radius + energy * 0.1; // Adjust the factor as needed
+			ctx.beginPath();
+			ctx.arc(circle.x, circle.y, haloRadius, 0, 2 * Math.PI);
+			ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)'; // Adjust color and transparency as needed
+			ctx.stroke();
 		});
 	}
-
 	function animate() {
 		updateCirclePositions();
 		draw();
