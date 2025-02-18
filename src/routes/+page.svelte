@@ -137,7 +137,7 @@
 
 			// Compute and draw halo
 			let energy = computeCircleEnergy(index);
-			let haloRadius = circle.radius + energy * 0.1; // Adjust the factor as needed
+			let haloRadius = circle.radius + energy * 0.001; // Adjust the factor as needed
 			ctx.beginPath();
 			ctx.arc(circle.x, circle.y, haloRadius, 0, 2 * Math.PI);
 			ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)'; // Adjust color and transparency as needed
@@ -167,6 +167,12 @@
 			generateCircles();
 			draw();
 		});
+		setInterval(() => {
+			circles.forEach((circle, index) => {
+				let energy = computeCircleEnergy(index);
+				console.log(`Circle ${index} energy: ${energy}`);
+			});
+		}, 1000);
 	});
 </script>
 
