@@ -7,6 +7,7 @@
 	let circles = [];
 	let edges = [];
 	let numberOfCircles = 0;
+	let energy = 0;
 	const alpha = 2;
 	const beta = 3;
 
@@ -45,7 +46,7 @@
 	}
 
 	function computeDiscreteEnergy() {
-		let energy = 0;
+		energy = 0;
 		console.log('Computing energy...');
 
 		for (let [i, j] of edges) {
@@ -61,13 +62,13 @@
 		}
 
 		console.log('Total Discrete Tangent Point Energy:', energy);
+		visualizeEnergy();
 	}
 
 	function draw() {
 		if (!ctx) return;
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-		// Draw edges
 		ctx.strokeStyle = '#ccc';
 		edges.forEach(([i, j]) => {
 			ctx.beginPath();
@@ -76,13 +77,36 @@
 			ctx.stroke();
 		});
 
-		// Draw circles
 		circles.forEach((circle) => {
 			ctx.beginPath();
 			ctx.arc(circle.x, circle.y, circle.radius, 0, 2 * Math.PI);
 			ctx.fillStyle = circle.color;
 			ctx.fill();
 		});
+	}
+
+	function visualizeEnergy() {
+		const energyCanvas = document.getElementById('energyCanvas');
+		const ctxEnergy = energyCanvas.getContext('2d');
+
+		energyCanvas.width = window.innerWidth;
+		energyCanvas.height = window.innerHeight;
+
+		ctxEnergy.clearRect(0, 0, energyCanvas.width, energyCanvas.height);
+
+		const maxRadius = 100;
+		const colorIntensity = Math.min(255, Math.floor(energy * 10));
+
+		ctxEnergy.beginPath();
+		ctxEnergy.arc(
+			energyCanvas.width / 2,
+			energyCanvas.height / 2,
+			Math.min(maxRadius, energy * 2),
+			0,
+			2 * Math.PI
+		);
+		ctxEnergy.fillStyle = `rgb(${colorIntensity}, 50, 150)`;
+		ctxEnergy.fill();
 	}
 
 	onMount(() => {
@@ -111,6 +135,10 @@
 </svelte:head>
 
 <canvas id="myCanvas"></canvas>
+<canvas
+	id="energyCanvas"
+	style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"
+></canvas>
 
 <style>
 	canvas {
