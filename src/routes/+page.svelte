@@ -209,6 +209,51 @@
 <canvas id="graphCanvas" {width} {height}></canvas>
 
 <p>Total Energy: {energy.toFixed(2)}</p>
+<div class="vertex-data">
+	<h3>Vertex Data:</h3>
+	{#each vertexData as data, i}
+		<div class="vertex-info">
+			<p>Vertex {i}:</p>
+			<ul>
+				<li>Energy: {data.energy.toFixed(4)}</li>
+				<li>Gradient: [{data.gradient.map((g) => g.toFixed(4)).join(', ')}]</li>
+				<li>Count: {data.count}</li>
+			</ul>
+		</div>
+	{/each}
+</div>
+
 <button on:click={regenerateAndAnimate}>Regenerate and Animate</button>
 <button on:click={startAnimation}>Start Animation</button>
 <button on:click={stopAnimation}>Stop Animation</button>
+
+<style>
+	.vertex-data {
+		margin-top: 20px;
+		padding: 10px;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+		max-height: 300px;
+		overflow-y: auto;
+	}
+
+	.vertex-info {
+		margin: 10px 0;
+		padding: 5px;
+		border-bottom: 1px solid #eee;
+	}
+
+	.vertex-info p {
+		margin: 0;
+		font-weight: bold;
+	}
+
+	.vertex-info ul {
+		margin: 5px 0;
+		padding-left: 20px;
+	}
+
+	.vertex-info li {
+		margin: 2px 0;
+	}
+</style>

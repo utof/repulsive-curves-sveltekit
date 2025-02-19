@@ -44,6 +44,40 @@ function tangentPointKernel(p, q, T, alpha, beta) {
 	return math.divide(numerator, denominator); // optimized using math divide
 }
 
+export function calculateDiscreteKernel(vertices, edges, edgeTangents, alpha, beta) {
+	const numEdges = edges.length;
+	const kernelMatrix = math.zeros(numEdges, numEdges);
+
+	for (let i = 0; i < numEdges; i++) {
+		for (let j = 0; j < numEdges; j++) {
+			if (
+				i === j ||
+				edges[i][0] === edges[j][0] ||
+				edges[i][0] === edges[j][1] ||
+				edges[i][1] === edges[j][0] ||
+				edges[i][1] === edges[j][1]
+			) {
+				continue; // Skip neighboring edges
+			}
+
+			let sum = 0;
+			const combinations = [
+				[vertices[edges[i][0]], vertices[edges[j][0]]],
+				[vertices[edges[i][0]], vertices[edges[j][1]]],
+				[vertices[edges[i][1]], vertices[edges[j][0]]],
+				[vertices[edges[i][1]], vertices[edges[j][1]]]
+			];
+
+			for (const [p, q] of combinations) {
+				sum += tangentPointKernel(p, q, edgeTangents[i], alpha, beta);
+			}
+
+			kernelMatrix.set([i, j], sum / 4);
+		}
+	}
+	return kernelMatrix;
+}
+
 export function discreteTangentPointEnergy(vertices, edges, alpha, beta) {
 	let totalEnergy = 0;
 	const vertexData = vertices.map(() => ({ energy: 0, count: 0, gradient: [0, 0] }));
