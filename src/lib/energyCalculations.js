@@ -1,13 +1,5 @@
 import * as math from 'mathjs';
 
-/**
- * Calculate the discrete tangent point energy for a graph
- * @param {Array} vertices - Array of vertex positions
- * @param {Array} edges - Array of edge connections
- * @param {number} alpha - Alpha parameter for energy calculation
- * @param {number} beta - Beta parameter for energy calculation
- * @returns {Object} Object containing total energy and vertex data
- */
 export function calculateEdgeProperties(vertices, edges) {
 	const edgeLengths = [];
 	const edgeTangents = [];
@@ -37,6 +29,19 @@ export function calculateEdgeProperties(vertices, edges) {
 	console.log('Midpoints:', edgeMidpoints);
 
 	return { edgeLengths, edgeTangents, edgeMidpoints };
+}
+
+function tangentPointKernel(p, q, T, alpha, beta) {
+	const p_ = math.matrix(p);
+	const q_ = math.matrix(q);
+	const T_ = math.matrix(T);
+
+	const diff = math.subtract(p_, q_);
+	const cross = math.cross(T_, diff);
+
+	const numerator = Math.pow(math.norm(cross), alpha);
+	const denominator = Math.pow(math.norm(diff), beta);
+	return math.divide(numerator, denominator); // optimized using math divide
 }
 
 export function discreteTangentPointEnergy(vertices, edges, alpha, beta) {
