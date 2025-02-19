@@ -1,7 +1,11 @@
 <script>
 	import { onMount, onDestroy } from 'svelte';
 	import * as math from 'mathjs';
-	import { calculateEdgeProperties, calculateDiscreteKernel } from '$lib/energyCalculations';
+	import {
+		calculateEdgeProperties,
+		calculateDiscreteKernel,
+		calculateDiscreteEnergy
+	} from '$lib/energyCalculations';
 
 	let canvas;
 	let ctx;
@@ -10,6 +14,7 @@
 	let edgeProps = { edgeLengths: [], edgeTangents: [], edgeMidpoints: [] };
 	let kernelCanvas;
 	let kernelCtx;
+	let discreteEnergy = 0;
 
 	const width = 700;
 	const height = 700;
@@ -113,7 +118,7 @@
 	function calculateAndDrawKernel() {
 		edgeProps = calculateEdgeProperties(vertices, edges);
 
-		// Calculate and log discrete kernel
+		// Calculate and log discrete kernel and energy
 		const kernelMatrix = calculateDiscreteKernel(
 			vertices,
 			edges,
@@ -121,7 +126,10 @@
 			alpha,
 			beta
 		);
+		discreteEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta);
+
 		console.log('Discrete Kernel Matrix:', kernelMatrix);
+		console.log('Discrete Energy:', discreteEnergy);
 		drawKernelMatrix(kernelMatrix);
 	}
 
@@ -237,10 +245,28 @@
 </script>
 
 <div style="position: relative; width: {width}px; height: {height}px;">
+	<div class="energy-value position: absolute; top: 10px; left: 50px; z-index: 10;">
+		<p>Discrete Energy: {discreteEnergy.toFixed(4)}</p>
+	</div>
 	<canvas id="graphCanvas" {width} {height} style="position: absolute; top: 0; left: 0;"></canvas>
 	<button on:click={regenerateGraph} style="position: absolute; top: 10px; left: 10px; z-index: 10;"
 		>Regenerate Graph</button
 	>
 </div>
 
-<canvas id="kernelCanvas" width="500" height="500"></canvas>
+<div class="kernel-section">
+	<canvas id="kernelCanvas" width="500" height="500"></canvas>
+</div>
+
+<style>
+	.kernel-section {
+		margin-top: 20px;
+	}
+
+	.energy-value {
+		margin-top: 10px;
+		font-size: 16px;
+		font-weight: bold;
+		text-align: center;
+	}
+</style>
