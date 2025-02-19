@@ -1,194 +1,180 @@
+<!-- +page.svelte -->
 <script>
 	import { onMount } from 'svelte';
 	import * as math from 'mathjs';
 
-	let canvas;
-	let ctx;
-	let circles = [];
+	let vertices = [];
 	let edges = [];
-	let numberOfCircles = 0;
-	const alpha = 2;
-	const beta = 3;
-	const learningRate = 0.9;
-	let animationFrame;
+	let energy = 0;
+	let vertexData = []; // Store energy-related data per vertex
 
-	function resizeCanvas() {
-		canvas.width = window.innerWidth;
-		canvas.height = window.innerHeight;
-	}
+	onMount(() => {
+		generateRandomGraph();
+		calculateEnergy();
+	});
 
-	function computeCircleEnergy(circleIndex) {
-		let energy = 0;
-		for (let [i, j] of edges) {
-			if (i !== circleIndex && j !== circleIndex) continue;
-
-			let y_i = [circles[i].x, circles[i].y];
-			let y_j = [circles[j].x, circles[j].y];
-			let segmentLength = math.distance(y_i, y_j);
-			let k_value = k_alpha_beta(y_i, y_j, alpha, beta);
-			energy += k_value * segmentLength * segmentLength;
-		}
-		return energy;
-	}
-
-	function generateCircles() {
-		numberOfCircles = Math.floor(Math.random() * 4) + 2;
-		circles = [];
+	function generateRandomGraph() {
+		const numVertices = Math.floor(Math.random() * (50 - 5 + 1)) + 5; // 5 to 50 vertices
+		vertices = [];
 		edges = [];
-		for (let i = 0; i < numberOfCircles; i++) {
-			circles.push({
-				x: Math.random() * canvas.width,
-				y: Math.random() * canvas.height,
-				radius: 10,
-				color: `hsl(${Math.random() * 360}, 70%, 50%)`
-			});
+
+		// Generate vertices with random 3D coordinates
+		for (let i = 0; i < numVertices; i++) {
+			vertices.push([
+				Math.random() * 2 - 1, // x: -1 to 1
+				Math.random() * 2 - 1, // y: -1 to 1
+				Math.random() * 2 - 1 // z: -1 to 1
+			]);
 		}
 
-		for (let i = 0; i < circles.length; i++) {
-			for (let j = i + 1; j < circles.length; j++) {
-				if (Math.random() < 0.7) {
-					edges.push([i, j]);
+		// Generate edges (at most one edge per vertex pair)
+		const edgeSet = new Set(); // Use a Set to prevent duplicate edges
+		for (let i = 0; i < numVertices; i++) {
+			for (let j = i + 1; j < numVertices; j++) {
+				if (Math.random() < 0.05) {
+					// 30% chance of creating an edge
+					const edge = [i, j];
+					const edgeString = `${i}-${j}`; // Create a unique string for the edge
+					if (!edgeSet.has(edgeString)) {
+						edges.push(edge);
+						edgeSet.add(edgeString);
+					}
 				}
 			}
 		}
 	}
 
-	function k_alpha_beta(y_i, y_j, alpha, beta) {
-		const diff = math.subtract(y_j, y_i);
-		const crossProduct = Math.abs(diff[0] * diff[1]);
-		const distance = math.norm(diff);
-		return Math.pow(crossProduct, alpha) / Math.pow(distance, beta);
-	}
+	function discreteTangentPointEnergy(vertices, edges, alpha, beta) {
+		let totalEnergy = 0;
+		vertexData = vertices.map(() => ({ energy: 0, count: 0 })); // Initialize per-vertex data
 
-	function energyGradient(circleIndex) {
-		let grad = [0, 0];
+		const edgeLengths = edges.map((edge) => math.distance(vertices[edge[0]], vertices[edge[1]]));
+		const edgeTangents = edges.map((edge, i) =>
+			math.divide(math.subtract(vertices[edge[1]], vertices[edge[0]]), edgeLengths[i])
+		);
 
-		for (let [i, j] of edges) {
-			if (i !== circleIndex && j !== circleIndex) continue;
+		for (let i = 0; i < edges.length; i++) {
+			for (let j = 0; j < edges.length; j++) {
+				if (i === j || edges[i].some((v) => edges[j].includes(v))) continue;
 
-			let y_i = [circles[i].x, circles[i].y];
-			let y_j = [circles[j].x, circles[j].y];
-			let diff = math.subtract(y_j, y_i);
-			let distance = math.norm(diff);
+				const ti = edgeTangents[i];
+				const xi = vertices[edges[i][0]];
+				const xj = vertices[edges[j][0]];
 
-			if (distance === 0) continue;
+				const p_minus_q = math.subtract(xi, xj);
+				const tx_cross_p_minus_q = math.cross(ti, p_minus_q);
 
-			let crossProduct = Math.abs(diff[0] * diff[1]);
-			let k_value = Math.pow(crossProduct, alpha) / Math.pow(distance, beta);
+				const numerator = Math.pow(math.norm(tx_cross_p_minus_q), beta);
+				const denominator = Math.pow(math.norm(p_minus_q), beta);
 
-			let gradFactor =
-				(alpha * Math.pow(crossProduct, alpha - 1) * Math.sign(diff[0] * diff[1])) /
-					Math.pow(distance, beta) -
-				(beta * Math.pow(crossProduct, alpha)) / Math.pow(distance, beta + 1);
+				const k_beta = numerator / denominator;
+				const edgeEnergy = k_beta * edgeLengths[i] * edgeLengths[j];
+				totalEnergy += edgeEnergy;
 
-			let unitVector = math.divide(diff, distance);
-			let gradContribution = math.multiply(unitVector, gradFactor);
-
-			if (i === circleIndex) {
-				grad = math.add(grad, gradContribution);
-			} else {
-				grad = math.subtract(grad, gradContribution);
+				// Accumulate energy contributions per vertex
+				vertexData[edges[i][0]].energy += edgeEnergy;
+				vertexData[edges[i][0]].count += 1;
+				vertexData[edges[i][1]].energy += edgeEnergy;
+				vertexData[edges[i][1]].count += 1;
+			}
+		}
+		// Average the energy contributions for each vertex
+		for (let i = 0; i < vertexData.length; i++) {
+			if (vertexData[i].count > 0) {
+				vertexData[i].energy /= vertexData[i].count;
 			}
 		}
 
-		return grad;
+		return totalEnergy;
 	}
 
-	function updateCirclePositions() {
-		circles.forEach((circle, index) => {
-			let grad = energyGradient(index);
-			circle.x -= learningRate * grad[0];
-			circle.y -= learningRate * grad[1];
-		});
+	function calculateEnergy() {
+		const alpha = 3;
+		const beta = 6;
+		energy = discreteTangentPointEnergy(vertices, edges, alpha, beta);
 	}
 
-	function computeDiscreteEnergy() {
-		let energy = 0;
-		for (let [i, j] of edges) {
-			let y_i = [circles[i].x, circles[i].y];
-			let y_j = [circles[j].x, circles[j].y];
-			let segmentLength = math.distance(y_i, y_j);
-			let k_value = k_alpha_beta(y_i, y_j, alpha, beta);
-			energy += k_value * segmentLength * segmentLength;
-		}
-		return energy;
+	function regenerateGraph() {
+		generateRandomGraph();
+		calculateEnergy();
 	}
 
-	function draw() {
-		if (!ctx) return;
-		ctx.clearRect(0, 0, canvas.width, canvas.height);
+	function getColor(vertexEnergy) {
+		// Normalize energy to [0, 1] range (adjust maxEnergy as needed)
+		const maxEnergy = Math.max(...vertexData.map((v) => v.energy)); // Find maximum vertex energy
+		const normalizedEnergy = maxEnergy > 0 ? vertexEnergy / maxEnergy : 0;
 
-		// Draw edges
-		ctx.strokeStyle = '#ccc';
-		edges.forEach(([i, j]) => {
-			ctx.beginPath();
-			ctx.moveTo(circles[i].x, circles[i].y);
-			ctx.lineTo(circles[j].x, circles[j].y);
-			ctx.stroke();
-		});
-
-		// Draw circles and halos
-		circles.forEach((circle, index) => {
-			// Draw circle
-			ctx.beginPath();
-			ctx.arc(circle.x, circle.y, circle.radius, 0, 2 * Math.PI);
-			ctx.fillStyle = circle.color;
-			ctx.fill();
-
-			// Compute and draw halo
-			let energy = computeCircleEnergy(index);
-			let haloRadius = circle.radius + energy * 0.001; // Adjust the factor as needed
-			ctx.beginPath();
-			ctx.arc(circle.x, circle.y, haloRadius, 0, 2 * Math.PI);
-			ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)'; // Adjust color and transparency as needed
-			ctx.stroke();
-		});
-	}
-	function animate() {
-		updateCirclePositions();
-		draw();
-		animationFrame = requestAnimationFrame(animate);
+		// Simple color mapping: blue (low energy) to red (high energy)
+		const r = Math.floor(255 * normalizedEnergy);
+		const g = 0;
+		const b = Math.floor(255 * (1 - normalizedEnergy));
+		return `rgb(${r}, ${g}, ${b})`;
 	}
 
-	onMount(() => {
-		canvas = document.getElementById('myCanvas');
-		ctx = canvas.getContext('2d');
-		if (!ctx) {
-			console.error('Canvas context not available');
-			return;
-		}
-		resizeCanvas();
-		generateCircles();
-		draw();
-		animate();
-
-		window.addEventListener('resize', () => {
-			resizeCanvas();
-			generateCircles();
-			draw();
-		});
-		setInterval(() => {
-			circles.forEach((circle, index) => {
-				let energy = computeCircleEnergy(index);
-				console.log(`Circle ${index} energy: ${energy}`);
-			});
-		}, 1000);
-	});
+	function getRadius(vertexEnergy) {
+		// Normalize energy to [0, 1] range (adjust maxEnergy as needed)
+		const maxEnergy = Math.max(...vertexData.map((v) => v.energy)); // Find maximum vertex energy
+		const normalizedEnergy = maxEnergy > 0 ? vertexEnergy / maxEnergy : 0;
+		// Map normalized energy to a radius between 2 and 10 (adjust as needed)
+		return 2 + 8 * normalizedEnergy;
+	}
 </script>
 
-<svelte:head>
-	<title>Gradient-Based Energy Minimization</title>
-</svelte:head>
+<div class="container">
+	{#each vertices as vertex, i}
+		<div
+			class="vertex"
+			style="
+          left: {vertex[0] * 200 + 250}px; /* Scale and center */
+          top: {vertex[1] * 200 + 250}px;
+          background-color: {getColor(vertexData[i]?.energy || 0)};
+          width: {getRadius(vertexData[i]?.energy || 0)}px;
+          height: {getRadius(vertexData[i]?.energy || 0)}px;
+        "
+		>
+			<!-- Optional: Display vertex index or other info -->
+			<!-- {i} -->
+		</div>
+	{/each}
 
-<canvas id="myCanvas"></canvas>
+	{#each edges as edge}
+		{@const v1 = vertices[edge[0]]}
+		{@const v2 = vertices[edge[1]]}
+		{@const dx = v2[0] - v1[0]}
+		{@const dy = v2[1] - v1[1]}
+		{@const length = Math.sqrt(dx * dx + dy * dy) * 200}
+		{@const angle = (Math.atan2(dy, dx) * 180) / Math.PI}
+		<div
+			class="edge"
+			style="
+          left: {v1[0] * 200 + 250}px;
+          top: {v1[1] * 200 + 250}px;
+          width: {length}px;
+          transform: rotate({angle}deg);
+        "
+		></div>
+	{/each}
+</div>
+
+<p>Total Energy: {energy.toFixed(2)}</p>
+<button on:click={regenerateGraph}>Regenerate Graph</button>
 
 <style>
-	canvas {
-		position: fixed;
-		top: 0;
-		left: 0;
+	.container {
 		width: 100%;
-		height: 100%;
-		z-index: -1;
+		height: 500px; /* Adjust as needed */
+		position: relative;
+		border: 1px solid black;
+	}
+	.vertex {
+		position: absolute;
+		border-radius: 50%; /* Make it a circle */
+		transform: translate(-50%, -50%); /* Center the circle */
+	}
+	.edge {
+		position: absolute;
+		background-color: gray;
+		height: 1px; /* Thin line */
+		transform-origin: 0 50%; /* Rotate around the starting point */
 	}
 </style>
