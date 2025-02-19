@@ -16,6 +16,8 @@
 	let vertexData = [];
 	let edgeProps = { edgeLengths: [], edgeTangents: [], edgeMidpoints: [] };
 	let animationFrameId;
+	let kernelCanvas;
+	let kernelCtx;
 	let isAnimating = false;
 
 	const width = 1920;
@@ -27,19 +29,69 @@
 	const TANGENT_ARROW_LENGTH = 20; // Length of tangent arrow visualization
 	let currentIteration = 0;
 
+	// Function to draw the kernel matrix visualization
+	function drawKernelMatrix(matrix) {
+		if (!kernelCtx) return;
+
+		kernelCtx.clearRect(0, 0, kernelCanvas.width, kernelCanvas.height);
+		const size = matrix.size();
+		const maxVal = math.max(matrix);
+		const cellSize = Math.min(kernelCanvas.width / size[0], kernelCanvas.height / size[1]);
+		const padding = 30; // Space for axis labels
+
+		// Draw the matrix cells
+		for (let i = 0; i < size[0]; i++) {
+			for (let j = 0; j < size[1]; j++) {
+				const value = matrix.get([i, j]);
+				const intensity = value / maxVal;
+				const color = `rgba(0, 0, 255, ${intensity})`;
+
+				kernelCtx.fillStyle = color;
+				kernelCtx.fillRect(padding + j * cellSize, padding + i * cellSize, cellSize, cellSize);
+			}
+		}
+
+		// Draw grid lines
+		kernelCtx.strokeStyle = 'black';
+		kernelCtx.lineWidth = 1;
+		for (let i = 0; i <= size[0]; i++) {
+			kernelCtx.beginPath();
+			kernelCtx.moveTo(padding, padding + i * cellSize);
+			kernelCtx.lineTo(padding + size[1] * cellSize, padding + i * cellSize);
+			kernelCtx.stroke();
+		}
+		for (let j = 0; j <= size[1]; j++) {
+			kernelCtx.beginPath();
+			kernelCtx.moveTo(padding + j * cellSize, padding);
+			kernelCtx.lineTo(padding + j * cellSize, padding + size[0] * cellSize);
+			kernelCtx.stroke();
+		}
+
+		// Draw axis labels
+		kernelCtx.fillStyle = 'black';
+		kernelCtx.font = '12px Arial';
+		kernelCtx.textAlign = 'center';
+
+		// X axis labels (columns)
+		for (let j = 0; j < size[1]; j++) {
+			kernelCtx.fillText(j.toString(), padding + j * cellSize + cellSize / 2, padding - 10);
+		}
+
+		// Y axis labels (rows)
+		kernelCtx.textAlign = 'right';
+		for (let i = 0; i < size[0]; i++) {
+			kernelCtx.fillText(i.toString(), padding - 5, padding + i * cellSize + cellSize / 2);
+		}
+	}
+
 	onMount(() => {
 		canvas = document.getElementById('graphCanvas');
 		ctx = canvas.getContext('2d');
+		kernelCanvas = document.getElementById('kernelCanvas');
+		kernelCtx = kernelCanvas.getContext('2d');
 		generateRandomGraph();
 		calculateEnergy();
 		drawGraph();
-	});
-
-	onDestroy(() => {
-		if (animationFrameId) {
-			// Check if animationFrameId is defined
-			cancelAnimationFrame(animationFrameId); // Clean up animation frame
-		}
 	});
 
 	function generateRandomGraph() {
@@ -86,6 +138,9 @@
 			beta
 		);
 		console.log('Discrete Kernel Matrix:', kernelMatrix);
+
+		// Draw the kernel matrix visualization
+		drawKernelMatrix(kernelMatrix);
 	}
 
 	function drawArrow(fromX, fromY, dirX, dirY, length) {
@@ -220,9 +275,16 @@
 	}
 </script>
 
-<canvas id="graphCanvas" {width} {height}></canvas>
+<div style="display: flex; justify-content: space-between;">
+	<canvas id="graphCanvas" {width} {height}></canvas>
+	<canvas id="kernelCanvas" width="500" height="500"></canvas>
+</div>
 
 <p>Total Energy: {energy.toFixed(2)}</p>
+
+<button on:click={regenerateAndAnimate}>Regenerate and Animate</button>
+<button on:click={startAnimation}>Start Animation</button>
+<button on:click={stopAnimation}>Stop Animation</button>
 <div class="vertex-data">
 	<h3>Vertex Data:</h3>
 	{#each vertexData as data, i}
@@ -236,10 +298,6 @@
 		</div>
 	{/each}
 </div>
-
-<button on:click={regenerateAndAnimate}>Regenerate and Animate</button>
-<button on:click={startAnimation}>Start Animation</button>
-<button on:click={stopAnimation}>Stop Animation</button>
 
 <style>
 	.vertex-data {
