@@ -1,8 +1,7 @@
+<!-- +page.svelte -->
 <script>
 	import { onMount, onDestroy } from 'svelte';
 	import * as math from 'mathjs';
-	import { getColor, getRadius } from '$lib/graphUtils';
-	import { discreteTangentPointEnergy, calculateEdgeProperties } from '$lib/energyCalculations';
 
 	let canvas;
 	let ctx;
@@ -10,17 +9,15 @@
 	let edges = [];
 	let energy = 0;
 	let vertexData = [];
-	let edgeProps = { edgeLengths: [], edgeTangents: [], edgeMidpoints: [] };
 	let animationFrameId;
 	let isAnimating = false;
 
-	const width = 1920;
-	const height = 1080;
+	const width = 500;
+	const height = 500;
 	const alpha = 3;
 	const beta = 6;
 	const learningRate = 0.01; // Adjust for animation speed
 	const maxIterations = 100; // Maximum iterations per step
-	const TANGENT_ARROW_LENGTH = 20; // Length of tangent arrow visualization
 	let currentIteration = 0;
 
 	onMount(() => {
@@ -67,40 +64,73 @@
 		currentIteration = 0; // Reset iteration count on regeneration
 	}
 
-	function calculateEnergy() {
-		const result = discreteTangentPointEnergy(vertices, edges, alpha, beta);
-		energy = result.totalEnergy;
-		vertexData = result.vertexData;
-		edgeProps = calculateEdgeProperties(vertices, edges);
+	function discreteTangentPointEnergy(vertices, edges, alpha, beta) {
+		let totalEnergy = 0;
+		vertexData = vertices.map(() => ({ energy: 0, count: 0, gradient: [0, 0] }));
+
+		const edgeLengths = edges.map((edge) => math.distance(vertices[edge[0]], vertices[edge[1]]));
+		const edgeTangents = edges.map((edge, i) =>
+			math.divide(math.subtract(vertices[edge[1]], vertices[edge[0]]), edgeLengths[i])
+		);
+
+		for (let i = 0; i < edges.length; i++) {
+			for (let j = 0; j < edges.length; j++) {
+				if (i === j || edges[i].some((v) => edges[j].includes(v))) continue;
+
+				const ti = edgeTangents[i];
+				const xi = vertices[edges[i][0]];
+				const xj = vertices[edges[j][0]];
+
+				const p_minus_q = math.subtract(xi, xj);
+				const tx_cross_p_minus_q = math.cross([...ti, 0], [...p_minus_q, 0]); // 2D cross product (z-component)
+
+				const numerator = Math.pow(Math.abs(tx_cross_p_minus_q[2]), beta); // Use abs for 2D
+				const denominator = Math.pow(math.norm(p_minus_q), beta);
+
+				const k_beta = numerator / denominator;
+				const edgeEnergy = k_beta * edgeLengths[i] * edgeLengths[j];
+				totalEnergy += edgeEnergy;
+
+				// --- Gradient Calculation (for animation) ---
+				const d_k_beta_d_xi = math.multiply(
+					(beta * k_beta) / math.norm(p_minus_q),
+					math.subtract(
+						math.multiply(math.dot(ti, p_minus_q) / math.norm(p_minus_q), ti),
+						math.multiply(
+							(tx_cross_p_minus_q[2] * tx_cross_p_minus_q[2]) / (numerator + 1e-9),
+							p_minus_q
+						) //add small number to prevent NaN
+					)
+				);
+
+				// Accumulate gradient and energy per vertex
+				vertexData[edges[i][0]].gradient = math.add(
+					vertexData[edges[i][0]].gradient,
+					math.multiply(edgeLengths[i] * edgeLengths[j], d_k_beta_d_xi)
+				);
+				vertexData[edges[i][1]].gradient = math.subtract(
+					vertexData[edges[i][1]].gradient,
+					math.multiply(edgeLengths[i] * edgeLengths[j], d_k_beta_d_xi)
+				);
+
+				vertexData[edges[i][0]].energy += edgeEnergy;
+				vertexData[edges[i][0]].count += 1;
+				vertexData[edges[i][1]].energy += edgeEnergy;
+				vertexData[edges[i][1]].count += 1;
+			}
+		}
+
+		for (let i = 0; i < vertexData.length; i++) {
+			if (vertexData[i].count > 0) {
+				vertexData[i].energy /= vertexData[i].count;
+			}
+		}
+
+		return totalEnergy;
 	}
 
-	function drawArrow(fromX, fromY, dirX, dirY, length) {
-		const headLength = 7;
-		const headAngle = Math.PI / 6;
-
-		const toX = fromX + dirX * length;
-		const toY = fromY + dirY * length;
-
-		// Draw arrow line
-		ctx.beginPath();
-		ctx.moveTo(fromX, fromY);
-		ctx.lineTo(toX, toY);
-		ctx.stroke();
-
-		// Draw arrow head
-		const angle = Math.atan2(dirY, dirX);
-		ctx.beginPath();
-		ctx.moveTo(toX, toY);
-		ctx.lineTo(
-			toX - headLength * Math.cos(angle - headAngle),
-			toY - headLength * Math.sin(angle - headAngle)
-		);
-		ctx.moveTo(toX, toY);
-		ctx.lineTo(
-			toX - headLength * Math.cos(angle + headAngle),
-			toY - headLength * Math.sin(angle + headAngle)
-		);
-		ctx.stroke();
+	function calculateEnergy() {
+		energy = discreteTangentPointEnergy(vertices, edges, alpha, beta);
 	}
 
 	function drawGraph() {
@@ -116,52 +146,29 @@
 			ctx.stroke();
 		}
 
-		// Draw vertices with numbers
+		// Draw vertices
 		for (let i = 0; i < vertices.length; i++) {
 			const vertexEnergy = vertexData[i]?.energy || 0;
-			const radius = getRadius(vertexEnergy, vertexData);
-
-			// Draw vertex circle
 			ctx.beginPath();
-			ctx.arc(vertices[i][0], vertices[i][1], radius, 0, 2 * Math.PI);
-			ctx.fillStyle = getColor(vertexEnergy, vertexData);
+			ctx.arc(vertices[i][0], vertices[i][1], getRadius(vertexEnergy), 0, 2 * Math.PI);
+			ctx.fillStyle = getColor(vertexEnergy);
 			ctx.fill();
-
-			// Draw vertex number
-			ctx.fillStyle = 'black';
-			ctx.font = '12px Arial';
-			ctx.textAlign = 'center';
-			ctx.textBaseline = 'middle';
-			ctx.fillText(i.toString(), vertices[i][0], vertices[i][1]);
 		}
+	}
 
-		// Draw midpoints with edge information and tangent arrows
-		ctx.font = '10px Arial';
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'bottom';
+	function getColor(vertexEnergy) {
+		const maxEnergy = Math.max(...vertexData.map((v) => v.energy), 1e-9); // Avoid division by zero
+		const normalizedEnergy = vertexEnergy / maxEnergy;
+		const r = Math.floor(255 * normalizedEnergy);
+		const g = 0;
+		const b = Math.floor(255 * (1 - normalizedEnergy));
+		return `rgb(${r}, ${g}, ${b})`;
+	}
 
-		for (let i = 0; i < edges.length; i++) {
-			const midpoint = edgeProps.edgeMidpoints[i];
-			const length = edgeProps.edgeLengths[i].toFixed(2);
-			const tangent = edgeProps.edgeTangents[i];
-
-			// Draw midpoint dot
-			ctx.fillStyle = 'red';
-			ctx.beginPath();
-			ctx.arc(midpoint[0], midpoint[1], 2, 0, 2 * Math.PI);
-			ctx.fill();
-
-			// Draw edge information
-			ctx.fillStyle = 'blue';
-			ctx.fillText(`L ${parseFloat(length).toFixed(0)}`, midpoint[0], midpoint[1] - 15);
-			ctx.fillText(`T ${tangent.map((t) => t.toFixed(1))}`, midpoint[0], midpoint[1] - 5);
-			ctx.fillText(`${edges[i][0]}, ${edges[i][1]}`, midpoint[0], midpoint[1] + 15);
-
-			// Draw tangent arrow
-			ctx.strokeStyle = 'green';
-			ctx.lineWidth = 1.5;
-			drawArrow(midpoint[0], midpoint[1], tangent[0], tangent[1], TANGENT_ARROW_LENGTH);
-		}
+	function getRadius(vertexEnergy) {
+		const maxEnergy = Math.max(...vertexData.map((v) => v.energy), 1e-9); // Avoid division by zero
+		const normalizedEnergy = vertexEnergy / maxEnergy;
+		return 2 + 8 * normalizedEnergy;
 	}
 
 	function animate() {
@@ -201,7 +208,7 @@
 	}
 
 	function regenerateAndAnimate() {
-		generateRandomGraph();
+		regenerateGraph();
 		startAnimation();
 	}
 </script>
