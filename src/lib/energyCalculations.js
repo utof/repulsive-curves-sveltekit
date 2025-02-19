@@ -80,65 +80,29 @@ export function calculateDiscreteKernel(vertices, edges, edgeTangents, alpha, be
 	return kernelMatrix;
 }
 
-export function discreteTangentPointEnergy(vertices, edges, alpha, beta) {
+export function calculateDiscreteEnergy(vertices, edges, alpha, beta) {
+	const { edgeLengths, edgeTangents } = calculateEdgeProperties(vertices, edges);
+	const kernelMatrix = calculateDiscreteKernel(vertices, edges, edgeTangents, alpha, beta);
+
 	let totalEnergy = 0;
-	const vertexData = vertices.map(() => ({ energy: 0, count: 0, gradient: [0, 0] }));
+	const numEdges = edges.length;
 
-	const edgeLengths = edges.map((edge) => math.distance(vertices[edge[0]], vertices[edge[1]]));
-	const edgeTangents = edges.map((edge, i) =>
-		math.divide(math.subtract(vertices[edge[1]], vertices[edge[0]]), edgeLengths[i])
-	);
+	for (let i = 0; i < numEdges; i++) {
+		for (let j = 0; j < numEdges; j++) {
+			// Ensure we're only considering non-neighboring edges, as per the paper.
+			if (
+				i === j ||
+				edges[i][0] === edges[j][0] ||
+				edges[i][0] === edges[j][1] ||
+				edges[i][1] === edges[j][0] ||
+				edges[i][1] === edges[j][1]
+			) {
+				continue;
+			}
 
-	for (let i = 0; i < edges.length; i++) {
-		for (let j = 0; j < edges.length; j++) {
-			if (i === j || edges[i].some((v) => edges[j].includes(v))) continue;
-
-			const ti = edgeTangents[i];
-			const xi = vertices[edges[i][0]];
-			const xj = vertices[edges[j][0]];
-
-			const p_minus_q = math.subtract(xi, xj);
-			// 2D cross product is just T.x * diff.y - T.y * diff.x
-			const cross2D = ti[0] * p_minus_q[1] - ti[1] * p_minus_q[0];
-
-			const numerator = Math.pow(Math.abs(cross2D), beta);
-			const denominator = Math.pow(math.norm(p_minus_q), beta);
-
-			const k_beta = numerator / denominator;
-			const edgeEnergy = k_beta * edgeLengths[i] * edgeLengths[j];
-			totalEnergy += edgeEnergy;
-
-			// --- Gradient Calculation (for animation) ---
-			const d_k_beta_d_xi = math.multiply(
-				(beta * k_beta) / math.norm(p_minus_q),
-				math.subtract(
-					math.multiply(math.dot(ti, p_minus_q) / math.norm(p_minus_q), ti),
-					math.multiply((cross2D * cross2D) / (numerator + 1e-9), p_minus_q) //add small number to prevent NaN
-				)
-			);
-
-			// Accumulate gradient and energy per vertex
-			vertexData[edges[i][0]].gradient = math.add(
-				vertexData[edges[i][0]].gradient,
-				math.multiply(edgeLengths[i] * edgeLengths[j], d_k_beta_d_xi)
-			);
-			vertexData[edges[i][1]].gradient = math.subtract(
-				vertexData[edges[i][1]].gradient,
-				math.multiply(edgeLengths[i] * edgeLengths[j], d_k_beta_d_xi)
-			);
-
-			vertexData[edges[i][0]].energy += edgeEnergy;
-			vertexData[edges[i][0]].count += 1;
-			vertexData[edges[i][1]].energy += edgeEnergy;
-			vertexData[edges[i][1]].count += 1;
+			const kernelValue = kernelMatrix.get([i, j]);
+			totalEnergy += kernelValue * edgeLengths[i] * edgeLengths[j];
 		}
 	}
-
-	for (let i = 0; i < vertexData.length; i++) {
-		if (vertexData[i].count > 0) {
-			vertexData[i].energy /= vertexData[i].count;
-		}
-	}
-
-	return { totalEnergy, vertexData };
+	return totalEnergy;
 }
