@@ -32,16 +32,18 @@ export function calculateEdgeProperties(vertices, edges) {
 }
 
 function tangentPointKernel(p, q, T, alpha, beta) {
+	// For 2D vectors, cross product is just determinant of 2x2 matrix
 	const p_ = math.matrix(p);
 	const q_ = math.matrix(q);
 	const T_ = math.matrix(T);
 
 	const diff = math.subtract(p_, q_);
-	const cross = math.cross(T_, diff);
+	// 2D cross product is just T.x * diff.y - T.y * diff.x
+	const cross2D = T_.get([0]) * diff.get([1]) - T_.get([1]) * diff.get([0]);
 
-	const numerator = Math.pow(math.norm(cross), alpha);
+	const numerator = Math.pow(Math.abs(cross2D), alpha);
 	const denominator = Math.pow(math.norm(diff), beta);
-	return math.divide(numerator, denominator); // optimized using math divide
+	return numerator / denominator;
 }
 
 export function calculateDiscreteKernel(vertices, edges, edgeTangents, alpha, beta) {
@@ -96,9 +98,10 @@ export function discreteTangentPointEnergy(vertices, edges, alpha, beta) {
 			const xj = vertices[edges[j][0]];
 
 			const p_minus_q = math.subtract(xi, xj);
-			const tx_cross_p_minus_q = math.cross([...ti, 0], [...p_minus_q, 0]); // 2D cross product (z-component)
+			// 2D cross product is just T.x * diff.y - T.y * diff.x
+			const cross2D = ti[0] * p_minus_q[1] - ti[1] * p_minus_q[0];
 
-			const numerator = Math.pow(Math.abs(tx_cross_p_minus_q[2]), beta); // Use abs for 2D
+			const numerator = Math.pow(Math.abs(cross2D), beta);
 			const denominator = Math.pow(math.norm(p_minus_q), beta);
 
 			const k_beta = numerator / denominator;
@@ -110,10 +113,7 @@ export function discreteTangentPointEnergy(vertices, edges, alpha, beta) {
 				(beta * k_beta) / math.norm(p_minus_q),
 				math.subtract(
 					math.multiply(math.dot(ti, p_minus_q) / math.norm(p_minus_q), ti),
-					math.multiply(
-						(tx_cross_p_minus_q[2] * tx_cross_p_minus_q[2]) / (numerator + 1e-9),
-						p_minus_q
-					) //add small number to prevent NaN
+					math.multiply((cross2D * cross2D) / (numerator + 1e-9), p_minus_q) //add small number to prevent NaN
 				)
 			);
 

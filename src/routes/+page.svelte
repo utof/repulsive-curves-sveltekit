@@ -2,7 +2,11 @@
 	import { onMount, onDestroy } from 'svelte';
 	import * as math from 'mathjs';
 	import { getColor, getRadius } from '$lib/graphUtils';
-	import { discreteTangentPointEnergy, calculateEdgeProperties } from '$lib/energyCalculations';
+	import {
+		discreteTangentPointEnergy,
+		calculateEdgeProperties,
+		calculateDiscreteKernel
+	} from '$lib/energyCalculations';
 
 	let canvas;
 	let ctx;
@@ -72,6 +76,16 @@
 		energy = result.totalEnergy;
 		vertexData = result.vertexData;
 		edgeProps = calculateEdgeProperties(vertices, edges);
+
+		// Calculate and log discrete kernel
+		const kernelMatrix = calculateDiscreteKernel(
+			vertices,
+			edges,
+			edgeProps.edgeTangents,
+			alpha,
+			beta
+		);
+		console.log('Discrete Kernel Matrix:', kernelMatrix);
 	}
 
 	function drawArrow(fromX, fromY, dirX, dirY, length) {
