@@ -275,10 +275,9 @@
 	}
 </script>
 
-<div style="display: flex; justify-content: space-between;">
-	<canvas id="graphCanvas" {width} {height}></canvas>
-	<canvas id="kernelCanvas" width="500" height="500"></canvas>
-</div>
+<canvas id="graphCanvas" {width} {height}></canvas>
+
+<canvas id="kernelCanvas" width="500" height="500"></canvas>
 
 <p>Total Energy: {energy.toFixed(2)}</p>
 
