@@ -19,6 +19,12 @@
 	let kernelMatrix = null;
 	let disjointPairs = calculateDisjointEdgePairs(edges);
 
+	// Dragging state
+	let isDragging = false;
+	let selectedVertex = null;
+	let previousEnergy = 0; // To track energy changes
+	let energyDelta = 0; // To show energy change
+
 	const width = 700;
 	const height = 700;
 	// Higher alpha and lower beta for more pronounced differences
@@ -127,7 +133,70 @@
 		disjointPairs = calculateDisjointEdgePairs(edges);
 		calculateAndDrawKernel();
 		drawGraph();
+
+		// Add mouse event listeners
+		canvas.addEventListener('mousedown', startDragging);
+		canvas.addEventListener('mousemove', handleDrag);
+		canvas.addEventListener('mouseup', stopDragging);
+		canvas.addEventListener('mouseleave', stopDragging);
 	});
+
+	onDestroy(() => {
+		// Clean up event listeners
+		if (canvas) {
+			canvas.removeEventListener('mousedown', startDragging);
+			canvas.removeEventListener('mousemove', handleDrag);
+			canvas.removeEventListener('mouseup', stopDragging);
+			canvas.removeEventListener('mouseleave', stopDragging);
+		}
+	});
+
+	function startDragging(event) {
+		const rect = canvas.getBoundingClientRect();
+		const x = event.clientX - rect.left;
+		const y = event.clientY - rect.top;
+
+		// Find the closest vertex within 10 pixels
+		for (let i = 0; i < vertices.length; i++) {
+			const dx = vertices[i][0] - x;
+			const dy = vertices[i][1] - y;
+			const distance = Math.sqrt(dx * dx + dy * dy);
+
+			if (distance < 10) {
+				isDragging = true;
+				selectedVertex = i;
+				previousEnergy = discreteEnergy;
+				break;
+			}
+		}
+	}
+
+	function handleDrag(event) {
+		if (!isDragging || selectedVertex === null) return;
+
+		const rect = canvas.getBoundingClientRect();
+		const x = Math.max(0, Math.min(width, event.clientX - rect.left));
+		const y = Math.max(0, Math.min(height, event.clientY - rect.top));
+
+		// Update vertex position
+		vertices[selectedVertex] = [x, y];
+
+		// Recalculate everything
+		disjointPairs = calculateDisjointEdgePairs(edges);
+		calculateAndDrawKernel();
+		drawGraph();
+
+		// Calculate energy change
+		energyDelta = discreteEnergy - previousEnergy;
+	}
+
+	function stopDragging() {
+		isDragging = false;
+		selectedVertex = null;
+
+		// Log the final energy state
+		console.log('Final Energy:', discreteEnergy, 'Delta:', energyDelta);
+	}
 
 	function generateRandomGraph() {
 		const numVertices = Math.floor(Math.random() * 10) + 5;
@@ -321,6 +390,9 @@
 		<div class="graph-container" style="position: relative; width: {width}px; height: {height}px;">
 			<div class="energy-value" style="position: absolute; top: 10px; left: 50px; z-index: 10;">
 				<p>Discrete Energy: {discreteEnergy.toFixed(4)}</p>
+				<p style="color: {energyDelta > 0 ? 'red' : 'green'}">
+					Change: {energyDelta.toFixed(4)}
+				</p>
 			</div>
 			<canvas id="graphCanvas" {width} {height} style="position: absolute; top: 0; left: 0;"
 			></canvas>
