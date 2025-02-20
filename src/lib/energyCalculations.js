@@ -64,53 +64,106 @@ function tangentPointKernel(p, q, T, alpha, beta) {
 	return result;
 }
 
-export function calculateDiscreteKernel(vertices, edges, edgeTangents, alpha, beta) {
+export function calculateDisjointEdgePairs(edges) {
+	const numEdges = edges.length;
+	const disjointPairs = [];
+
+	for (let i = 0; i < numEdges; i++) {
+		disjointPairs[i] = []; // Initialize the array for edge i
+		for (let j = 0; j < numEdges; j++) {
+			if (i === j) continue; // Don't compare an edge to itself
+
+			const edge1 = edges[i];
+			const edge2 = edges[j];
+
+			// Check if the edges share any vertices.  If they don't share any,
+			// they are disjoint.
+			if (
+				edge1[0] !== edge2[0] &&
+				edge1[0] !== edge2[1] &&
+				edge1[1] !== edge2[0] &&
+				edge1[1] !== edge2[1]
+			) {
+				disjointPairs[i].push(j);
+			}
+		}
+	}
+	console.log('Calculated disjointPairs:', disjointPairs); // Add this
+	return disjointPairs;
+}
+
+export function calculateDiscreteKernel(vertices, edges, edgeTangents, alpha, beta, disjointPairs) {
 	const numEdges = edges.length;
 	const kernelMatrix = math.zeros(numEdges, numEdges);
 
-	for (let i = 0; i < numEdges; i++) {
-		for (let j = 0; j < numEdges; j++) {
-			let sum = 0;
-			const combinations = [
-				[vertices[edges[i][0]], vertices[edges[j][0]]],
-				[vertices[edges[i][0]], vertices[edges[j][1]]],
-				[vertices[edges[i][1]], vertices[edges[j][0]]],
-				[vertices[edges[i][1]], vertices[edges[j][1]]]
-			];
-			// TODO optimize because matrix is symmetric.
-			for (const [p, q] of combinations) {
-				sum += tangentPointKernel(p, q, edgeTangents[i], alpha, beta);
-			}
+	// Add defensive checks for disjointPairs
+	if (!disjointPairs || !Array.isArray(disjointPairs) || disjointPairs.length === 0) {
+		console.warn('No disjoint pairs found, returning zero kernel matrix');
+		return kernelMatrix;
+	}
 
-			kernelMatrix.set([i, j], sum / 4);
+	for (let i = 0; i < numEdges; i++) {
+		// Add defensive check for disjointPairs[i]
+		if (!disjointPairs[i]) {
+			console.warn(`No disjoint pairs for edge ${i}`);
+			continue;
+		}
+
+		for (const j of disjointPairs[i]) {
+			// Defensive check: Ensure i and j are valid indices
+			if (i < edges.length && j < edges.length) {
+				let sum = 0;
+				const combinations = [
+					[vertices[edges[i][0]], vertices[edges[j][0]]],
+					[vertices[edges[i][0]], vertices[edges[j][1]]],
+					[vertices[edges[i][1]], vertices[edges[j][0]]],
+					[vertices[edges[i][1]], vertices[edges[j][1]]]
+				];
+
+				for (const [p, q] of combinations) {
+					sum += tangentPointKernel(p, q, edgeTangents[i], alpha, beta);
+				}
+				kernelMatrix.set([i, j], sum / 4);
+				kernelMatrix.set([j, i], sum / 4); // Keep symmetry!
+			} else {
+				console.warn(
+					'Invalid edge index:',
+					i,
+					j,
+					'disjointPairs:',
+					disjointPairs,
+					'edges.length',
+					edges.length
+				);
+			}
 		}
 	}
 	return kernelMatrix;
 }
 
-export function calculateDiscreteEnergy(vertices, edges, alpha, beta) {
+export function calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs) {
 	const { edgeLengths, edgeTangents } = calculateEdgeProperties(vertices, edges);
-	const kernelMatrix = calculateDiscreteKernel(vertices, edges, edgeTangents, alpha, beta);
+	const kernelMatrix = calculateDiscreteKernel(
+		vertices,
+		edges,
+		edgeTangents,
+		alpha,
+		beta,
+		disjointPairs
+	);
 
 	let totalEnergy = 0;
 	const numEdges = edges.length;
 
 	for (let i = 0; i < numEdges; i++) {
-		for (let j = 0; j < numEdges; j++) {
-			// Ensure we're only considering non-neighboring edges, as per the paper.
-			if (
-				i === j ||
-				edges[i][0] === edges[j][0] ||
-				edges[i][0] === edges[j][1] ||
-				edges[i][1] === edges[j][0] ||
-				edges[i][1] === edges[j][1]
-			) {
-				continue;
+		for (const j of disjointPairs[i]) {
+			// No need for the neighbor check anymore!
+			if (i < edges.length && j < edges.length) {
+				// Add defensive check
+				const kernelValue = kernelMatrix.get([i, j]);
+				totalEnergy += kernelValue * edgeLengths[i] * edgeLengths[j];
 			}
-
-			const kernelValue = kernelMatrix.get([i, j]);
-			totalEnergy += kernelValue * edgeLengths[i] * edgeLengths[j];
 		}
 	}
-	return totalEnergy;
+	return totalEnergy / 2; // Divide by 2 because of symmetry
 }

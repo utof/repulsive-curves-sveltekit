@@ -3,6 +3,7 @@
 	import * as math from 'mathjs';
 	import {
 		calculateEdgeProperties,
+		calculateDisjointEdgePairs,
 		calculateDiscreteKernel,
 		calculateDiscreteEnergy
 	} from '$lib/energyCalculations';
@@ -16,6 +17,7 @@
 	let kernelCtx;
 	let discreteEnergy = 0;
 	let kernelMatrix = null;
+	let disjointPairs = calculateDisjointEdgePairs(edges);
 
 	const width = 700;
 	const height = 700;
@@ -122,6 +124,7 @@
 		kernelCanvas = document.getElementById('kernelCanvas');
 		kernelCtx = kernelCanvas.getContext('2d');
 		generateRandomGraph();
+		disjointPairs = calculateDisjointEdgePairs(edges);
 		calculateAndDrawKernel();
 		drawGraph();
 	});
@@ -158,8 +161,15 @@
 		edgeProps = calculateEdgeProperties(vertices, edges);
 
 		// Calculate and log discrete kernel and energy
-		kernelMatrix = calculateDiscreteKernel(vertices, edges, edgeProps.edgeTangents, alpha, beta);
-		discreteEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta);
+		kernelMatrix = calculateDiscreteKernel(
+			vertices,
+			edges,
+			edgeProps.edgeTangents,
+			alpha,
+			beta,
+			disjointPairs
+		);
+		discreteEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
 
 		console.log('Discrete Kernel Matrix:', kernelMatrix);
 		console.log('Discrete Energy:', discreteEnergy);
@@ -300,6 +310,7 @@
 
 	function regenerateGraph() {
 		generateRandomGraph();
+		disjointPairs = calculateDisjointEdgePairs(edges); // Move this after graph generation
 		calculateAndDrawKernel();
 		drawGraph();
 	}
