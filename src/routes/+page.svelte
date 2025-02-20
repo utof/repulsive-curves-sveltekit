@@ -15,6 +15,7 @@
 	let kernelCanvas;
 	let kernelCtx;
 	let discreteEnergy = 0;
+	let kernelMatrix = null;
 
 	const width = 700;
 	const height = 700;
@@ -28,12 +29,26 @@
 		if (!kernelCtx) return;
 
 		const size = matrix.size();
-		const cellSize = 50; // Fixed cell size for better visibility
-		const padding = 50; // Increased padding for labels
-		const canvasWidth = padding * 2 + size[1] * cellSize;
+		const padding = 50; // Padding for labels
+		const maxWidth = Math.min(window.innerWidth / 2, 800); // Max width is half screen width or 800px
+		const maxContentWidth = maxWidth - padding * 2; // Available space for cells
+
+		// Calculate cell size to fit within maxWidth
+		const cellSize = Math.min(
+			50, // Maximum cell size
+			Math.floor(maxContentWidth / size[1]), // Width-constrained cell size
+			Math.floor(maxContentWidth / size[0]) // Height-constrained cell size (maintain square)
+		);
+
+		// Calculate actual dimensions
+		const canvasWidth = Math.min(maxWidth, padding * 2 + size[1] * cellSize);
 		const canvasHeight = padding * 2 + size[0] * cellSize;
 
-		// Update canvas dimensions to fit content
+		console.log('Matrix size:', size[0], 'x', size[1]);
+		console.log('Cell size:', cellSize);
+		console.log('Canvas dimensions:', canvasWidth, 'x', canvasHeight);
+
+		// Update canvas dimensions
 		kernelCanvas.width = canvasWidth;
 		kernelCanvas.height = canvasHeight;
 
@@ -143,13 +158,7 @@
 		edgeProps = calculateEdgeProperties(vertices, edges);
 
 		// Calculate and log discrete kernel and energy
-		const kernelMatrix = calculateDiscreteKernel(
-			vertices,
-			edges,
-			edgeProps.edgeTangents,
-			alpha,
-			beta
-		);
+		kernelMatrix = calculateDiscreteKernel(vertices, edges, edgeProps.edgeTangents, alpha, beta);
 		discreteEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta);
 
 		console.log('Discrete Kernel Matrix:', kernelMatrix);
@@ -189,14 +198,42 @@
 	function drawGraph() {
 		ctx.clearRect(0, 0, width, height);
 
-		// Draw edges
-		ctx.strokeStyle = 'gray';
-		ctx.lineWidth = 1;
-		for (const edge of edges) {
-			ctx.beginPath();
-			ctx.moveTo(vertices[edge[0]][0], vertices[edge[0]][1]);
-			ctx.lineTo(vertices[edge[1]][0], vertices[edge[1]][1]);
-			ctx.stroke();
+		// Draw edges with varying thickness and color based on kernel values
+		if (kernelMatrix) {
+			const maxKernelValue = math.max(kernelMatrix);
+			console.log('Max kernel value:', maxKernelValue);
+
+			for (let i = 0; i < edges.length; i++) {
+				const edge = edges[i];
+
+				// Calculate average kernel value for this edge
+				let totalKernel = 0;
+				let count = 0;
+				for (let j = 0; j < edges.length; j++) {
+					if (i !== j) {
+						totalKernel += kernelMatrix.get([i, j]);
+						count++;
+					}
+				}
+				const avgKernel = totalKernel / (count || 1);
+				const normalizedValue = avgKernel / maxKernelValue;
+
+				console.log(`Edge ${i} avg kernel:`, avgKernel, 'normalized:', normalizedValue);
+
+				// Calculate color (blue to red gradient)
+				const blue = Math.round(255 * (1 - normalizedValue));
+				const red = Math.round(255 * normalizedValue);
+
+				// Set line properties
+				ctx.strokeStyle = `rgb(${red}, 0, ${blue})`;
+				ctx.lineWidth = 1 + normalizedValue * 4; // Thickness varies from 1 to 5 pixels
+
+				// Draw edge
+				ctx.beginPath();
+				ctx.moveTo(vertices[edge[0]][0], vertices[edge[0]][1]);
+				ctx.lineTo(vertices[edge[1]][0], vertices[edge[1]][1]);
+				ctx.stroke();
+			}
 		}
 
 		// Draw vertices
@@ -268,27 +305,52 @@
 	}
 </script>
 
-<div style="position: relative; width: {width}px; height: {height}px;">
-	<div class="energy-value position: absolute; top: 10px; left: 50px; z-index: 10;">
-		<p>Discrete Energy: {discreteEnergy.toFixed(4)}</p>
+<div class="visualization-container">
+	<div class="graph-section">
+		<div class="graph-container" style="position: relative; width: {width}px; height: {height}px;">
+			<div class="energy-value" style="position: absolute; top: 10px; left: 50px; z-index: 10;">
+				<p>Discrete Energy: {discreteEnergy.toFixed(4)}</p>
+			</div>
+			<canvas id="graphCanvas" {width} {height} style="position: absolute; top: 0; left: 0;"
+			></canvas>
+			<button
+				on:click={regenerateGraph}
+				style="position: absolute; top: 10px; left: 10px; z-index: 10;">Regenerate Graph</button
+			>
+		</div>
 	</div>
-	<canvas id="graphCanvas" {width} {height} style="position: absolute; top: 0; left: 0;"></canvas>
-	<button on:click={regenerateGraph} style="position: absolute; top: 10px; left: 10px; z-index: 10;"
-		>Regenerate Graph</button
-	>
-</div>
 
-<div class="kernel-section">
-	<canvas id="kernelCanvas"></canvas>
+	<div class="kernel-section">
+		<canvas id="kernelCanvas"></canvas>
+	</div>
 </div>
 
 <style>
+	.visualization-container {
+		display: flex;
+		gap: 20px;
+		align-items: flex-start;
+		padding: 20px;
+		max-width: 100%;
+		overflow-x: auto;
+	}
+
+	.graph-section {
+		flex-shrink: 0;
+	}
+
 	.kernel-section {
-		margin-top: 20px;
+		flex-shrink: 0;
+		display: flex;
+		justify-content: center;
+	}
+
+	canvas#kernelCanvas {
+		display: block;
+		background: white;
 	}
 
 	.energy-value {
-		margin-top: 10px;
 		font-size: 16px;
 		font-weight: bold;
 		text-align: center;
