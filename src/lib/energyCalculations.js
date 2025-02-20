@@ -38,7 +38,7 @@ function tangentPointKernel(p, q, T, alpha, beta) {
 	const T_ = math.matrix(T);
 
 	const diff = math.subtract(p_, q_);
-	// 2D cross product is just T.x * diff.y - T.y * diff.x
+	// cross = T x (p - q)
 	const cross2D = T_.get([0]) * diff.get([1]) - T_.get([1]) * diff.get([0]);
 
 	const numerator = Math.pow(Math.abs(cross2D), alpha);
@@ -52,16 +52,6 @@ export function calculateDiscreteKernel(vertices, edges, edgeTangents, alpha, be
 
 	for (let i = 0; i < numEdges; i++) {
 		for (let j = 0; j < numEdges; j++) {
-			if (
-				i === j ||
-				edges[i][0] === edges[j][0] ||
-				edges[i][0] === edges[j][1] ||
-				edges[i][1] === edges[j][0] ||
-				edges[i][1] === edges[j][1]
-			) {
-				continue; // Skip neighboring edges
-			}
-
 			let sum = 0;
 			const combinations = [
 				[vertices[edges[i][0]], vertices[edges[j][0]]],
