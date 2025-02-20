@@ -75,11 +75,11 @@
 				kernelCtx.fillStyle = 'black';
 				kernelCtx.font = '10px Arial';
 				kernelCtx.textAlign = 'center';
-				kernelCtx.fillText(
-					value.toFixed(2),
-					padding + j * cellSize + cellSize / 2,
-					padding + i * cellSize + cellSize / 2
-				);
+				// kernelCtx.fillText(
+				// 	value.toFixed(2),
+				// 	padding + j * cellSize + cellSize / 2,
+				// 	padding + i * cellSize + cellSize / 2
+				// );
 			}
 		}
 
@@ -141,7 +141,7 @@
 		const edgeSet = new Set();
 		for (let i = 0; i < numVertices; i++) {
 			for (let j = i + 1; j < numVertices; j++) {
-				if (Math.random() < 0.2) {
+				if (Math.random() < 0.1) {
 					// 5% chance of an edge
 					const edge = [i, j];
 					const edgeString = `${i}-${j}`;
