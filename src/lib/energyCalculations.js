@@ -38,12 +38,30 @@ function tangentPointKernel(p, q, T, alpha, beta) {
 	const T_ = math.matrix(T);
 
 	const diff = math.subtract(p_, q_);
+	const diffNorm = math.norm(diff);
+	// if (diffNorm < 1e-10) return 0; // Points too close together
+
 	// cross = T x (p - q)
 	const cross2D = T_.get([0]) * diff.get([1]) - T_.get([1]) * diff.get([0]);
 
+	// Scale the result for better visibility
+	const epsilon = 1e-6; // Prevent division by zero
 	const numerator = Math.pow(Math.abs(cross2D), alpha);
-	const denominator = Math.pow(math.norm(diff), beta);
-	return numerator / denominator;
+	const denominator = Math.pow(diffNorm + epsilon, beta);
+	const result = numerator / denominator; // Scale by 100 for better visibility
+
+	console.log('Kernel calc:', {
+		p: p_.toArray(),
+		q: q_.toArray(),
+		T: T_.toArray(),
+		cross2D,
+		diffNorm,
+		numerator,
+		denominator,
+		result
+	});
+
+	return result;
 }
 
 export function calculateDiscreteKernel(vertices, edges, edgeTangents, alpha, beta) {

@@ -18,6 +18,7 @@
 
 	const width = 700;
 	const height = 700;
+	// Higher alpha and lower beta for more pronounced differences
 	const alpha = 3;
 	const beta = 6;
 	const TANGENT_ARROW_LENGTH = 20; // Length of tangent arrow visualization
@@ -26,21 +27,44 @@
 	function drawKernelMatrix(matrix) {
 		if (!kernelCtx) return;
 
-		kernelCtx.clearRect(0, 0, kernelCanvas.width, kernelCanvas.height);
 		const size = matrix.size();
+		const cellSize = 50; // Fixed cell size for better visibility
+		const padding = 50; // Increased padding for labels
+		const canvasWidth = padding * 2 + size[1] * cellSize;
+		const canvasHeight = padding * 2 + size[0] * cellSize;
+
+		// Update canvas dimensions to fit content
+		kernelCanvas.width = canvasWidth;
+		kernelCanvas.height = canvasHeight;
+
+		kernelCtx.clearRect(0, 0, kernelCanvas.width, kernelCanvas.height);
 		const maxVal = math.max(matrix);
-		const cellSize = Math.min(kernelCanvas.width / size[0], kernelCanvas.height / size[1]);
-		const padding = 30; // Space for axis labels
 
 		// Draw the matrix cells
 		for (let i = 0; i < size[0]; i++) {
 			for (let j = 0; j < size[1]; j++) {
 				const value = matrix.get([i, j]);
 				const intensity = value / maxVal;
-				const color = `rgba(0, 0, 255, ${intensity})`;
+				// Use white to blue gradient for better visibility
+				const r = Math.round(255 - intensity * 255);
+				const g = Math.round(255 - intensity * 255);
+				const b = 255;
+				const minOpacity = 0.1; // Ensure some minimum visibility
+				const opacity = minOpacity + (1 - minOpacity) * intensity;
+				const color = `rgba(${r}, ${g}, ${b}, ${opacity})`;
 
 				kernelCtx.fillStyle = color;
 				kernelCtx.fillRect(padding + j * cellSize, padding + i * cellSize, cellSize, cellSize);
+
+				// Add value label in cell for debugging
+				kernelCtx.fillStyle = 'black';
+				kernelCtx.font = '10px Arial';
+				kernelCtx.textAlign = 'center';
+				kernelCtx.fillText(
+					value.toFixed(2),
+					padding + j * cellSize + cellSize / 2,
+					padding + i * cellSize + cellSize / 2
+				);
 			}
 		}
 
@@ -255,7 +279,7 @@
 </div>
 
 <div class="kernel-section">
-	<canvas id="kernelCanvas" width="500" height="500"></canvas>
+	<canvas id="kernelCanvas"></canvas>
 </div>
 
 <style>
