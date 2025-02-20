@@ -59,7 +59,7 @@ export function calculateDiscreteKernel(vertices, edges, edgeTangents, alpha, be
 				[vertices[edges[i][1]], vertices[edges[j][0]]],
 				[vertices[edges[i][1]], vertices[edges[j][1]]]
 			];
-
+			// TODO optimize because matrix is symmetric.
 			for (const [p, q] of combinations) {
 				sum += tangentPointKernel(p, q, edgeTangents[i], alpha, beta);
 			}
