@@ -167,7 +167,8 @@ export function calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPa
 	}
 	return totalEnergy / 2; // Divide by 2 because of symmetry
 }
-function calculateE_adj(vertices, edges) {
+
+export function calculateE_adj(vertices, edges) {
 	const numVertices = vertices.length;
 	const E_adj = [];
 	for (let i = 0; i < numVertices; i++) {

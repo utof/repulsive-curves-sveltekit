@@ -6,7 +6,8 @@
 		calculateDisjointEdgePairs,
 		calculateDiscreteKernel,
 		calculateDiscreteEnergy,
-		computeGradient
+		computeGradient, // Import the new function
+		calculateE_adj
 	} from '$lib/energyCalculations';
 
 	let canvas;
@@ -23,8 +24,10 @@
 	// Dragging state
 	let isDragging = false;
 	let selectedVertex = null;
+	let initialEnergy = null; // Initialize to null
 	let previousEnergy = 0; // To track energy changes
 	let energyDelta = 0; // To show energy change
+	let energyChangeSinceStart = 0;
 
 	const width = 700;
 	const height = 700;
@@ -32,6 +35,11 @@
 	const alpha = 3;
 	const beta = 6;
 	const TANGENT_ARROW_LENGTH = 20; // Length of tangent arrow visualization
+
+	// Animation parameters
+	let animationFrameId;
+	let eta = 909; // Initial step size (for backtracking)
+	const c = 0.1; // Armijo constant (for backtracking)
 
 	// Function to draw the kernel matrix visualization
 	function drawKernelMatrix(matrix) {
@@ -140,6 +148,9 @@
 		canvas.addEventListener('mousemove', handleDrag);
 		canvas.addEventListener('mouseup', stopDragging);
 		canvas.addEventListener('mouseleave', stopDragging);
+
+		// Start the animation (using buttons now, so commented out here)
+		// step();
 	});
 
 	onDestroy(() => {
@@ -150,6 +161,8 @@
 			canvas.removeEventListener('mouseup', stopDragging);
 			canvas.removeEventListener('mouseleave', stopDragging);
 		}
+		// Cancel any ongoing animation
+		stopAnimation();
 	});
 
 	function startDragging(event) {
@@ -359,6 +372,7 @@
 			ctx.lineWidth = 1.5;
 			drawArrow(midpoint[0], midpoint[1], tangent[0], tangent[1], TANGENT_ARROW_LENGTH);
 		}
+		// --- Visualize the Gradient ---
 		const gradient = computeGradient(vertices, edges, alpha, beta, disjointPairs, edgeProps);
 
 		for (let i = 0; i < vertices.length; i++) {
@@ -373,26 +387,106 @@
 		}
 	}
 
-	// Animation functions commented out for now
-	// function animate() {
-	//   drawGraph();
-	//   calculateAndDrawKernel();
-	//   animationFrameId = requestAnimationFrame(animate);
-	// }
+	// --- Animation Functions ---
+	function startAnimation() {
+		if (!animationFrameId) {
+			initialEnergy = discreteEnergy;
+			step();
+		}
+	}
 
-	// function startAnimation() {
-	//   animate();
-	// }
+	function stopAnimation() {
+		if (animationFrameId) {
+			cancelAnimationFrame(animationFrameId);
+			animationFrameId = null;
+		}
+	}
 
-	// function stopAnimation() {
-	//   if (animationFrameId) {
-	//     cancelAnimationFrame(animationFrameId);
-	//   }
-	// }
+	function step() {
+		// 1. Perform a gradient descent step (with backtracking)
+		const gradient = computeGradient(vertices, edges, alpha, beta, disjointPairs, edgeProps);
+		const { eta: newEta, newVertices } = backtrackingLineSearch(
+			vertices,
+			edges,
+			alpha,
+			beta,
+			gradient,
+			eta, // Pass the current eta
+			c,
+			disjointPairs,
+			edgeProps
+		);
+
+		eta = newEta; // Update eta with the value from backtracking
+
+		// 2. Update the vertex positions
+		vertices = newVertices;
+
+		// 3. Recalculate edge properties and disjoint pairs
+		edgeProps = calculateEdgeProperties(vertices, edges);
+		disjointPairs = calculateDisjointEdgePairs(edges);
+
+		// 4. Recalculate the energy (for display)
+		discreteEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+		energyChangeSinceStart = discreteEnergy - initialEnergy; // Update: Removed the redundant declaration
+		// 5. Redraw the graph
+		drawGraph();
+
+		// 6. Request the next animation frame
+		animationFrameId = requestAnimationFrame(step);
+	}
+
+	function backtrackingLineSearch(
+		vertices,
+		edges,
+		alpha,
+		beta,
+		gradient,
+		initialEta,
+		c,
+		disjointPairs,
+		edgeProps
+	) {
+		let eta = initialEta;
+		let currentEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+
+		while (true) {
+			const newVertices = [];
+			for (let i = 0; i < vertices.length; i++) {
+				newVertices.push([
+					vertices[i][0] - eta * gradient[i][0],
+					vertices[i][1] - eta * gradient[i][1]
+				]);
+			}
+
+			const newEdgeProps = calculateEdgeProperties(newVertices, edges);
+			const newDisjointPairs = calculateDisjointEdgePairs(edges);
+			const newEnergy = calculateDiscreteEnergy(newVertices, edges, alpha, beta, newDisjointPairs);
+
+			// Armijo condition (sufficient decrease)
+			const armijoCondition =
+				newEnergy <=
+				currentEnergy +
+					c * eta * gradient.flat().reduce((sum, val, idx) => sum + val * gradient.flat()[idx], 0); // Dot product
+
+			if (armijoCondition) {
+				return { eta, newVertices }; // Return both the step size and the new vertices
+			}
+
+			eta *= 0.5; // Reduce step size (0.5 is a common factor)
+
+			if (eta < 1e-6) {
+				// Prevent infinite loop (adjust threshold as needed)
+				console.warn('Backtracking line search failed: step size too small.');
+				return { eta: 0, newVertices: vertices }; // Return original vertices
+			}
+		}
+	}
 
 	function regenerateGraph() {
 		generateRandomGraph();
 		disjointPairs = calculateDisjointEdgePairs(edges); // Move this after graph generation
+		edgeProps = calculateEdgeProperties(vertices, edges);
 		calculateAndDrawKernel();
 		drawGraph();
 	}
@@ -406,12 +500,23 @@
 				<p style="color: {energyDelta > 0 ? 'red' : 'green'}">
 					Change: {energyDelta.toFixed(4)}
 				</p>
+				<p style="color: {energyChangeSinceStart > 0 ? 'red' : 'green'}">
+					Total Change: {energyChangeSinceStart.toFixed(5)}
+				</p>
 			</div>
 			<canvas id="graphCanvas" {width} {height} style="position: absolute; top: 0; left: 0;"
 			></canvas>
 			<button
 				on:click={regenerateGraph}
 				style="position: absolute; top: 10px; left: 10px; z-index: 10;">Regenerate Graph</button
+			>
+			<button
+				on:click={startAnimation}
+				style="position: absolute; top: 40px; left: 10px; z-index: 10;">Start Animation</button
+			>
+			<button
+				on:click={stopAnimation}
+				style="position: absolute; top: 70px; left: 10px; z-index: 10;">Stop Animation</button
 			>
 		</div>
 	</div>
