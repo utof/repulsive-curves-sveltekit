@@ -167,3 +167,187 @@ export function calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPa
 	}
 	return totalEnergy / 2; // Divide by 2 because of symmetry
 }
+function calculateE_adj(vertices, edges) {
+	const numVertices = vertices.length;
+	const E_adj = [];
+	for (let i = 0; i < numVertices; i++) {
+		E_adj.push([]); // Initialize an empty array for each vertex
+	}
+
+	for (let i = 0; i < edges.length; i++) {
+		const edge = edges[i];
+		E_adj[edge[0]].push(i); // Add edge index to both vertices' adjacency lists
+		E_adj[edge[1]].push(i);
+	}
+	return E_adj;
+}
+
+export function computeGradient(vertices, edges, alpha, beta, disjointPairs, edgeProps) {
+	const numVertices = vertices.length;
+	const numEdges = edges.length;
+	const gradient = [];
+	for (let i = 0; i < numVertices; i++) {
+		gradient.push([0, 0]); // Initialize gradient for each vertex
+	}
+
+	const E_adj = calculateE_adj(vertices, edges); // Calculate E_adj
+
+	for (let p = 0; p < numVertices; p++) {
+		let derivP = [0, 0]; // Gradient for the current vertex
+
+		for (const I of E_adj[p]) {
+			// Edges adjacent to p
+			for (const J of disjointPairs[I]) {
+				// Edges disjoint from I
+				for (let i = 0; i < 2; i++) {
+					for (let j = 0; j < 2; j++) {
+						if (edges[I][i] === p) {
+							const i1 = edges[I][i];
+							const i2 = edges[I][(i + 1) % 2];
+							const j1 = edges[J][j];
+
+							// --- Case 1,1 ---
+							const crossTerm = [
+								vertices[i2][0] - vertices[j1][0], // x component
+								vertices[i2][1] - vertices[j1][1] // y component
+							];
+
+							const denomDiff = [
+								vertices[i1][0] - vertices[j1][0],
+								vertices[i1][1] - vertices[j1][1]
+							];
+
+							const crossTerm_cross_e1 = -crossTerm[1];
+							const crossTerm_cross_e2 = crossTerm[0];
+
+							const TMat = [
+								[crossTerm_cross_e1, 0],
+								[0, crossTerm_cross_e2]
+							];
+
+							const term1 = math.multiply(
+								(1 - alpha) * Math.pow(edgeProps.edgeLengths[I], -alpha - 1),
+								[vertices[i1][0] - vertices[i2][0], vertices[i1][1] - vertices[i2][1]],
+								Math.pow(math.norm([crossTerm_cross_e1, crossTerm_cross_e2]), alpha),
+								Math.pow(math.norm(denomDiff), -beta)
+							);
+
+							const term2 = math.multiply(
+								alpha * Math.pow(edgeProps.edgeLengths[I], 1 - alpha),
+								Math.pow(math.norm(denomDiff), -beta),
+								Math.pow(math.norm([crossTerm_cross_e1, crossTerm_cross_e2]), alpha - 2),
+								math.multiply([crossTerm_cross_e1, crossTerm_cross_e2], TMat)
+							);
+
+							const term3 = math.multiply(
+								-beta * Math.pow(edgeProps.edgeLengths[I], 1 - alpha),
+								Math.pow(math.norm(denomDiff), -beta - 2),
+								Math.pow(math.norm([crossTerm_cross_e1, crossTerm_cross_e2]), alpha),
+								denomDiff
+							);
+
+							const termSum11 = math.multiply(
+								0.25 * edgeProps.edgeLengths[J],
+								math.add(math.add(term1, term2), term3)
+							);
+							derivP = math.add(derivP, termSum11);
+
+							// --- Case 2,1 ---
+							const denomDiff21 = [
+								vertices[i2][0] - vertices[j1][0],
+								vertices[i2][1] - vertices[j1][1]
+							];
+
+							const term1_21 = math.multiply(
+								(1 - alpha) * Math.pow(edgeProps.edgeLengths[I], -alpha - 1),
+								[vertices[i1][0] - vertices[i2][0], vertices[i1][1] - vertices[i2][1]],
+								Math.pow(math.norm([crossTerm_cross_e1, crossTerm_cross_e2]), alpha),
+								Math.pow(math.norm(denomDiff21), -beta)
+							);
+
+							const term2_21 = math.multiply(
+								alpha * Math.pow(edgeProps.edgeLengths[I], 1 - alpha),
+								Math.pow(math.norm(denomDiff21), -beta),
+								Math.pow(math.norm([crossTerm_cross_e1, crossTerm_cross_e2]), alpha - 2),
+								math.multiply([crossTerm_cross_e1, crossTerm_cross_e2], TMat)
+							);
+
+							const termSum21 = math.multiply(
+								0.25 * edgeProps.edgeLengths[J],
+								math.add(term1_21, term2_21)
+							);
+							derivP = math.add(derivP, termSum21);
+
+							// --- Case J: 1,1 ---
+							const TJ = edgeProps.edgeTangents[J];
+							const TMatJ = [
+								[-TJ[1], 0],
+								[0, TJ[0]]
+							];
+
+							const denomDiffJ11 = [
+								vertices[i1][0] - vertices[j1][0],
+								vertices[i1][1] - vertices[j1][1]
+							];
+
+							const crossTermJ11 = [
+								-TJ[1] * denomDiffJ11[1], // -TJy * diffy
+								TJ[0] * denomDiffJ11[0] //  TJX * diffx
+							];
+
+							const term1J11 = math.multiply(
+								Math.pow(math.norm(crossTermJ11), alpha),
+								Math.pow(math.norm(denomDiffJ11), -beta),
+								denomDiffJ11,
+								1 / edgeProps.edgeLengths[I]
+							);
+
+							const term2J11 = math.multiply(
+								math.multiply(crossTermJ11, TMatJ),
+								alpha * edgeProps.edgeLengths[I],
+								Math.pow(math.norm(denomDiffJ11), -beta),
+								Math.pow(math.norm(crossTermJ11), alpha - 2)
+							);
+
+							const term3J11 = math.multiply(
+								-beta * edgeProps.edgeLengths[I],
+								Math.pow(math.norm(denomDiffJ11), -beta - 2),
+								Math.pow(math.norm(crossTermJ11), alpha),
+								denomDiffJ11
+							);
+
+							const termSumJ11 = math.multiply(
+								0.25 * edgeProps.edgeLengths[J],
+								math.add(math.add(term1J11, term2J11), term3J11)
+							);
+							derivP = math.add(derivP, termSumJ11);
+
+							// --- Case J: 1,2 ---
+							const denomDiffJ12 = [
+								vertices[i2][0] - vertices[j1][0],
+								vertices[i2][1] - vertices[j1][1]
+							];
+
+							const crossTermJ12 = [
+								-TJ[1] * denomDiffJ12[1], // -TJy * diffy
+								TJ[0] * denomDiffJ12[0] //  TJX * diffx
+							];
+
+							const termJ12 = math.multiply(
+								0.25 * (edgeProps.edgeLengths[J] / edgeProps.edgeLengths[I]),
+								Math.pow(math.norm(crossTermJ12), alpha),
+								Math.pow(math.norm(denomDiffJ12), -beta),
+								[vertices[i1][0] - vertices[i2][0], vertices[i1][1] - vertices[i2][1]]
+							);
+
+							derivP = math.add(derivP, termJ12);
+						}
+					}
+				}
+			}
+		}
+		gradient[p][0] = derivP[0];
+		gradient[p][1] = derivP[1];
+	}
+	return gradient;
+}

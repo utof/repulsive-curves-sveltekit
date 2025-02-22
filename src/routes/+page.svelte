@@ -5,7 +5,8 @@
 		calculateEdgeProperties,
 		calculateDisjointEdgePairs,
 		calculateDiscreteKernel,
-		calculateDiscreteEnergy
+		calculateDiscreteEnergy,
+		computeGradient
 	} from '$lib/energyCalculations';
 
 	let canvas;
@@ -357,6 +358,18 @@
 			ctx.strokeStyle = 'green';
 			ctx.lineWidth = 1.5;
 			drawArrow(midpoint[0], midpoint[1], tangent[0], tangent[1], TANGENT_ARROW_LENGTH);
+		}
+		const gradient = computeGradient(vertices, edges, alpha, beta, disjointPairs, edgeProps);
+
+		for (let i = 0; i < vertices.length; i++) {
+			const scale = 10; // Adjust this scaling factor as needed
+			drawArrow(
+				vertices[i][0],
+				vertices[i][1],
+				gradient[i][0] * scale, // Scaled x component
+				gradient[i][1] * scale, // Scaled y component
+				20 // Arrow length (adjust as needed)
+			);
 		}
 	}
 
