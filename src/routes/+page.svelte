@@ -6,8 +6,13 @@
 		calculateDisjointEdgePairs,
 		calculateDiscreteKernel,
 		calculateDiscreteEnergy,
-		computeGradient, // Import the new function
-		calculateE_adj
+		computeGradient,
+		calculateE_adj,
+		buildW0,
+		buildB0,
+		buildW,
+		buildB,
+		buildA_bar
 	} from '$lib/energyCalculations';
 
 	let canvas;
@@ -38,7 +43,7 @@
 
 	// Animation parameters
 	let animationFrameId;
-	let eta = 909; // Initial step size (for backtracking)
+	let eta = 0.01; // Initial step size (for backtracking)
 	const c = 0.1; // Armijo constant (for backtracking)
 
 	// Function to draw the kernel matrix visualization
@@ -238,6 +243,8 @@
 				}
 			}
 		}
+		console.log('Generated vertices:', vertices);
+		console.log('Generated edges:', edges);
 	}
 
 	function calculateAndDrawKernel() {
@@ -259,7 +266,8 @@
 		drawKernelMatrix(kernelMatrix);
 	}
 
-	function drawArrow(fromX, fromY, dirX, dirY, length) {
+	function drawArrow(fromX, fromY, dirX, dirY, length, color = 'black') {
+		// Default color
 		const headLength = 7;
 		const headAngle = Math.PI / 6;
 
@@ -270,6 +278,7 @@
 		ctx.beginPath();
 		ctx.moveTo(fromX, fromY);
 		ctx.lineTo(toX, toY);
+		ctx.strokeStyle = color; // Use the provided color
 		ctx.stroke();
 
 		// Draw arrow head
@@ -382,7 +391,37 @@
 				vertices[i][1],
 				gradient[i][0] * scale, // Scaled x component
 				gradient[i][1] * scale, // Scaled y component
-				20 // Arrow length (adjust as needed)
+				20, // Arrow length (adjust as needed)
+				'blue'
+			);
+		}
+		// --- Visualize the B0-preconditioned Gradient ---
+		const W0 = buildW0(vertices, edges, edgeProps, alpha, beta, disjointPairs); //recompute
+		const B0 = buildB0(vertices, edges, W0); //recompute
+		const W = buildW(vertices, edges, edgeProps, alpha, beta, disjointPairs);
+		const B = buildB(vertices, edges, edgeProps, W);
+		const A_bar = buildA_bar(vertices, edges, B, B0);
+		const gradientMatrix = math.matrix(gradient.flat()).reshape([vertices.length * 2, 1]);
+
+		// --- Regularization (Temporary Fix) ---
+		const regularizationTerm = math.multiply(1e-6, math.identity(vertices.length * 2)); // Small multiple of identity
+		const regularized_A_bar = math.add(A_bar, regularizationTerm);
+
+		const g = math.multiply(math.pinv(regularized_A_bar), gradientMatrix)._data.flat(); // Use regularized A_bar
+		const sobolevGradient = [];
+		for (let i = 0; i < g.length; i += 2) {
+			sobolevGradient.push([g[i], g[i + 1]]);
+		}
+
+		for (let i = 0; i < vertices.length; i++) {
+			const scale = 10; // Same scale as before
+			drawArrow(
+				vertices[i][0],
+				vertices[i][1],
+				sobolevGradient[i][0] * scale, // Scaled x component
+				sobolevGradient[i][1] * scale, // Scaled y component
+				20, // Arrow length
+				'purple' // Different color!
 			);
 		}
 	}
@@ -403,36 +442,50 @@
 	}
 
 	function step() {
-		// 1. Perform a gradient descent step (with backtracking)
 		const gradient = computeGradient(vertices, edges, alpha, beta, disjointPairs, edgeProps);
+
+		// --- Build A_bar ---
+		const W = buildW(vertices, edges, edgeProps, alpha, beta, disjointPairs);
+		const W0 = buildW0(vertices, edges, edgeProps, alpha, beta, disjointPairs);
+		const B = buildB(vertices, edges, edgeProps, W);
+		const B0 = buildB0(vertices, edges, W0);
+		const A_bar = buildA_bar(vertices, edges, B, B0);
+
+		// --- Regularization (Temporary Fix) ---
+		const regularizationTerm = math.multiply(1e-6, math.identity(vertices.length * 2));
+		const regularized_A_bar = math.add(A_bar, regularizationTerm);
+
+		// --- Solve regularized_A_bar * g = gradient for g ---
+		const gradientMatrix = math.matrix(gradient.flat()).reshape([vertices.length * 2, 1]);
+		const g = math.multiply(math.pinv(regularized_A_bar), gradientMatrix)._data.flat();
+
+		const sobolevGradient = [];
+		for (let i = 0; i < g.length; i += 2) {
+			sobolevGradient.push([g[i], g[i + 1]]);
+		}
+
+		// --- Backtracking Line Search (using the Sobolev gradient) ---
 		const { eta: newEta, newVertices } = backtrackingLineSearch(
 			vertices,
 			edges,
 			alpha,
 			beta,
-			gradient,
-			eta, // Pass the current eta
+			sobolevGradient,
+			eta,
 			c,
 			disjointPairs,
 			edgeProps
 		);
 
-		eta = newEta; // Update eta with the value from backtracking
-
-		// 2. Update the vertex positions
+		eta = newEta;
 		vertices = newVertices;
 
-		// 3. Recalculate edge properties and disjoint pairs
 		edgeProps = calculateEdgeProperties(vertices, edges);
 		disjointPairs = calculateDisjointEdgePairs(edges);
-
-		// 4. Recalculate the energy (for display)
 		discreteEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
-		energyChangeSinceStart = discreteEnergy - initialEnergy; // Update: Removed the redundant declaration
-		// 5. Redraw the graph
+		energyChangeSinceStart = discreteEnergy - initialEnergy;
 		drawGraph();
 
-		// 6. Request the next animation frame
 		animationFrameId = requestAnimationFrame(step);
 	}
 
