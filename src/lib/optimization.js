@@ -2,34 +2,28 @@
 import { calculateL2Gradient, calculateEdgeProperties } from '$lib/energyCalculations';
 import { computePreconditionedGradient } from '$lib/innerProduct';
 
-export function gradientDescentStep(
-	vertices,
-	edges,
-	alpha,
-	beta,
-	disjointPairs,
-	stepSize,
-	width,
-	height
-) {
-	console.log('Gradient Descent Step - Initial vertices:', vertices);
+export function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs, stepSize) {
+	console.log('Gradient Descent Step - Initial vertices:', JSON.stringify(vertices));
 	const { edgeTangents } = calculateEdgeProperties(vertices, edges);
 	const L2Gradient = calculateL2Gradient(vertices, edges, alpha, beta, disjointPairs);
+	console.log('L2 Gradient:', JSON.stringify(L2Gradient));
 	const sigma = beta / alpha - 1.5;
 	console.log('Sigma:', sigma);
 	const gradient = computePreconditionedGradient(vertices, edges, edgeTangents, sigma, L2Gradient);
+	console.log('Preconditioned Gradient:', JSON.stringify(gradient));
 
 	const newVertices = vertices.map((vertex, i) => {
 		const gradX = gradient[i][0];
 		const gradY = gradient[i][1];
-		const newX = Math.max(0, Math.min(width, vertex[0] - stepSize * (isNaN(gradX) ? 0 : gradX)));
-		const newY = Math.max(0, Math.min(height, vertex[1] - stepSize * (isNaN(gradY) ? 0 : gradY)));
+		const newX = vertex[0] - stepSize * (isNaN(gradX) ? 0 : gradX);
+		const newY = vertex[1] - stepSize * (isNaN(gradY) ? 0 : gradY);
 		console.log(
 			`Vertex[${i}] update: [${vertex[0]}, ${vertex[1]}] -> [${newX}, ${newY}] with grad [${gradX}, ${gradY}]`
 		);
 		return [newX, newY];
 	});
 
+	console.log('New vertices:', JSON.stringify(newVertices));
 	return newVertices;
 }
 
@@ -40,8 +34,6 @@ export function createOptimizer(
 	beta,
 	disjointPairs,
 	stepSize,
-	width,
-	height,
 	maxIterations,
 	onUpdate
 ) {
@@ -50,31 +42,34 @@ export function createOptimizer(
 
 	const step = () => {
 		if (currentIteration < maxIterations) {
-			console.log(`Optimization Step ${currentIteration}`);
+			console.log(`Optimization Step ${currentIteration} - Starting`);
 			const newVertices = gradientDescentStep(
 				vertices,
 				edges,
 				alpha,
 				beta,
 				disjointPairs,
-				stepSize,
-				width,
-				height
+				stepSize
 			);
+			console.log(`Step ${currentIteration} - New vertices computed:`, JSON.stringify(newVertices));
 			for (let i = 0; i < vertices.length; i++) {
 				vertices[i][0] = newVertices[i][0];
 				vertices[i][1] = newVertices[i][1];
 			}
 			currentIteration++;
+			console.log(`Step ${currentIteration} - Vertices updated:`, JSON.stringify(vertices));
 			onUpdate();
+			console.log(`Step ${currentIteration} - onUpdate called`);
 		} else {
 			stop();
+			console.log('Optimization stopped - Max iterations reached');
 		}
 	};
 
 	const start = () => {
 		currentIteration = 0;
 		if (!intervalId) {
+			console.log('Starting optimization');
 			intervalId = setInterval(step, 20);
 		}
 	};
@@ -83,6 +78,7 @@ export function createOptimizer(
 		if (intervalId) {
 			clearInterval(intervalId);
 			intervalId = null;
+			console.log('Optimization stopped');
 		}
 	};
 

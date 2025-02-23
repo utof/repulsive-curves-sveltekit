@@ -1,6 +1,6 @@
 // src/lib/interaction.js
 
-export function setupInteractions(canvas, vertices, updateFn, width, height) {
+export function setupInteractions(canvas, vertices, updateFn) {
 	let draggingVertex = null;
 	let dragOffsetX = 0;
 	let dragOffsetY = 0;
@@ -30,9 +30,6 @@ export function setupInteractions(canvas, vertices, updateFn, width, height) {
 
 			let newX = mouseX + dragOffsetX;
 			let newY = mouseY + dragOffsetY;
-
-			newX = Math.max(0, Math.min(width, newX));
-			newY = Math.max(0, Math.min(height, newY));
 
 			vertices[draggingVertex] = [newX, newY];
 			updateFn(); // Call the update function

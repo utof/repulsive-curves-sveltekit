@@ -18,15 +18,14 @@
 	let kernelCanvas;
 	let graphCtx;
 	let optimizer;
-	let cleanupInteractions = () => {}; // Initialize as no-op
+	let cleanupInteractions = () => {};
 	let isOptimizing = false;
 
 	const width = 700;
 	const height = 700;
 	const alpha = 3;
 	const beta = 6;
-	const stepSize = 0.0005;
-	// const stepSize = 50;
+	const stepSize = 0.00005;
 	const maxIterations = 1000;
 
 	onMount(() => {
@@ -85,27 +84,19 @@
 			beta,
 			initialKernel.disjointPairs,
 			stepSize,
-			width,
-			height,
 			maxIterations,
 			updateVisualization
 		);
 
-		// Clean up old interactions and set up new ones
 		cleanupInteractions();
-		cleanupInteractions = setupInteractions(
-			graphCanvas,
-			$vertices,
-			updateVisualization,
-			width,
-			height
-		);
+		cleanupInteractions = setupInteractions(graphCanvas, $vertices, updateVisualization);
 
 		updateVisualization();
 	}
 
 	function startOptimization() {
 		if (optimizer && !isOptimizing) {
+			console.log('Start optimization clicked');
 			optimizer.start();
 			isOptimizing = true;
 		}
@@ -113,13 +104,17 @@
 
 	function stopOptimization() {
 		if (optimizer && isOptimizing) {
+			console.log('Stop optimization clicked');
 			optimizer.stop();
 			isOptimizing = false;
 		}
 	}
 
 	function singleStep() {
-		if (optimizer) optimizer.step();
+		if (optimizer) {
+			console.log('Single step clicked');
+			optimizer.step();
+		}
 	}
 
 	function getEnergyChangeColor() {
