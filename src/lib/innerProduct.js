@@ -144,7 +144,13 @@ export function computePreconditionedGradient(vertices, edges, edgeTangents, sig
 			AFull.set([i * dim + 1, j * dim + 1], val);
 		}
 	}
-	console.log('AFull Matrix:', AFull.toArray());
+	// Add regularization to ensure invertibility
+	const epsilon = 1e-6;
+	for (let i = 0; i < numEdges * dim; i++) {
+		AFull.set([i, i], AFull.get([i, i]) + epsilon);
+	}
+	console.log('AFull Matrix (regularized):', AFull.toArray());
+	console.log('AFull determinant:', math.det(AFull));
 
 	const negGradientFlat = math.multiply(-1, gradientFlat);
 	console.log('NegGradientFlat:', negGradientFlat);
@@ -155,10 +161,9 @@ export function computePreconditionedGradient(vertices, edges, edgeTangents, sig
 		console.log('gradFlatFull after solve (raw):', gradFlatFull.toArray());
 	} catch (e) {
 		console.error('Matrix inversion failed:', e);
-		gradFlatFull = math.zeros(numEdges * dim); // Fallback to zero gradient
+		gradFlatFull = math.zeros(numEdges * dim); // Fallback
 	}
 
-	// Convert gradFlatFull to array if it's a matrix
 	const gradFlatArray = Array.isArray(gradFlatFull) ? gradFlatFull : gradFlatFull.toArray();
 
 	const gradFlat = [];
