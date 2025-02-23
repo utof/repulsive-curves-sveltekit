@@ -32,19 +32,6 @@
 		regenerateGraph(); // Initial graph
 
 		cleanupInteractions = setupInteractions(canvas, vertices, updateVisualization, width, height);
-
-		optimizer = createOptimizer(
-			vertices,
-			edges,
-			alpha,
-			beta,
-			kernel ? kernel.disjointPairs : [], // Use kernel.disjointPairs if available
-			stepSize,
-			width,
-			height,
-			maxIterations,
-			updateVisualization // Use a single update function
-		);
 	});
 
 	onDestroy(() => {
@@ -58,20 +45,33 @@
 
 	function updateVisualization() {
 		if (kernel) {
-			const updatedKernelData = kernel.update(); // Call the update function
-			discreteEnergy = updatedKernelData.discreteEnergy;
-			energyChange = discreteEnergy - previousEnergy;
-			previousEnergy = discreteEnergy;
+			// Call kernel.update() and *destructure* the results
+			const { kernelMatrix, discreteEnergy: newDiscreteEnergy } = kernel.update();
+			energyChange = newDiscreteEnergy - previousEnergy;
+			previousEnergy = newDiscreteEnergy;
+			discreteEnergy = newDiscreteEnergy; // Update the displayed energy
+
+			drawGraph(
+				ctx,
+				width,
+				height,
+				vertices,
+				edges,
+				kernel.edgeProps, // Access edgeProps directly
+				kernelMatrix // Use the updated kernelMatrix
+			);
+		} else {
+			// Handle the case where kernel is not yet initialized (shouldn't happen normally)
+			drawGraph(
+				ctx,
+				width,
+				height,
+				vertices,
+				edges,
+				{ edgeLengths: [], edgeTangents: [], edgeMidpoints: [] },
+				null
+			);
 		}
-		drawGraph(
-			ctx,
-			width,
-			height,
-			vertices,
-			edges,
-			kernel ? kernel.edgeProps : { edgeLengths: [], edgeTangents: [], edgeMidpoints: [] },
-			kernel ? kernel.kernelMatrix : null
-		);
 	}
 
 	function regenerateGraph() {
@@ -81,8 +81,27 @@
 		vertices = newGraph.vertices;
 		edges = newGraph.edges;
 
-		// Initialize or update kernel
-		kernel = kernel ? kernel.update() : setupKernel(kernelCanvas, vertices, edges, alpha, beta);
+		// Initialize or update kernel.  Crucially, *always* call setupKernel.
+		kernel = setupKernel(kernelCanvas, vertices, edges, alpha, beta);
+
+		// Create/Recreate the optimizer.  This is important because the optimizer
+		// needs to work with the *current* vertices and edges.
+		if (optimizer) {
+			optimizer.stop(); // Stop any existing optimizer
+		}
+		optimizer = createOptimizer(
+			vertices,
+			edges,
+			alpha,
+			beta,
+			kernel.disjointPairs,
+			stepSize,
+			width,
+			height,
+			maxIterations,
+			updateVisualization
+		);
+
 		updateVisualization(); // Initial draw
 	}
 

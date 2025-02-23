@@ -50,16 +50,16 @@ function tangentPointKernel(p, q, T, alpha, beta) {
 	const denominator = Math.pow(diffNorm + epsilon, beta);
 	const result = numerator / denominator; // Scale by 100 for better visibility
 
-	console.log('Kernel calc:', {
-		p: p_.toArray(),
-		q: q_.toArray(),
-		T: T_.toArray(),
-		cross2D,
-		diffNorm,
-		numerator,
-		denominator,
-		result
-	});
+	// console.log('Kernel calc:', {
+	// 	p: p_.toArray(),
+	// 	q: q_.toArray(),
+	// 	T: T_.toArray(),
+	// 	cross2D,
+	// 	diffNorm,
+	// 	numerator,
+	// 	denominator,
+	// 	result
+	// });
 
 	return result;
 }
