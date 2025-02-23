@@ -25,7 +25,7 @@
 	const height = 700;
 	const alpha = 3;
 	const beta = 6;
-	const stepSize = 1;
+	const stepSize = 1000;
 	// const stepSize = 100;
 	const maxIterations = 1000;
 

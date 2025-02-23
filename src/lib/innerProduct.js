@@ -6,37 +6,162 @@ import {
 	tangentPointKernel
 } from '$lib/energyCalculations';
 
-function calculateLowOrderTerm(vertices, edges, sigma, alpha = 2, beta = 4) {
-	alpha = 2;
-	beta = 4; // hardcode it for now, as per paper.
+function build_weights(alpha, beta, edges, disjointPairs, vertices, edgeTangents, edgeLengths) {
+	console.log('Entering build_weights function');
+	console.log('alpha:', alpha);
+	console.log('beta:', beta);
+	console.log('edges:', edges);
+	console.log('disjointPairs:', disjointPairs);
+	console.log('vertices:', vertices);
+	console.log('edgeTangents:', edgeTangents);
+	console.log('edgeLengths:', edgeLengths);
+
+	const edge_num = edges.length;
+	console.log('edge_num:', edge_num);
+
+	const sigma = (beta - 1) / alpha;
+	console.log('sigma:', sigma);
+
+	const W = math.zeros(edge_num, edge_num);
+	const W0 = math.zeros(edge_num, edge_num);
+	console.log('Initialized W:', W);
+	console.log('Initialized W0:', W0);
+
+	for (let I = 0; I < disjointPairs.length; I++) {
+		console.log('Outer loop: I =', I);
+		console.log('disjointPairs[I]:', disjointPairs[I]);
+
+		for (const J_ind of disjointPairs[I]) {
+			console.log('  Inner loop: J_ind =', J_ind);
+			const J = J_ind;
+			console.log('  J =', J);
+
+			let elt1 = 0;
+			let elt2 = 0;
+			console.log('  Initialized elt1:', elt1);
+			console.log('  Initialized elt2:', elt2);
+
+			for (let a = 0; a < 2; a++) {
+				console.log('    a-loop: a =', a);
+				for (let b = 0; b < 2; b++) {
+					console.log('      b-loop: b =', b);
+
+					const i = edges[I][a];
+					const j = edges[J][b];
+					console.log('      i:', i);
+					console.log('      j:', j);
+
+					const p = vertices[i];
+					const q = vertices[j];
+					console.log('      p:', p);
+					console.log('      q:', q);
+
+					const diff = math.subtract(p, q);
+					console.log('      diff:', diff);
+
+					let diff_norm = math.norm(diff);
+					console.log('      diff_norm (before clamping):', diff_norm);
+
+					// Handle near-zero distances
+					if (diff_norm < 1e-8) {
+						diff_norm = 1e-8;
+						console.log('      diff_norm (after clamping):', diff_norm);
+					}
+
+					const term1 = 1 / Math.pow(diff_norm, 2 * sigma + 1);
+					console.log('      term1:', term1);
+					if (!Number.isFinite(term1)) {
+						console.error(
+							'      term1 is not finite! diff_norm:',
+							diff_norm,
+							'2 * sigma + 1:',
+							2 * sigma + 1
+						);
+					}
+					elt1 += term1;
+					console.log('      elt1 (after adding term1):', elt1);
+
+					const alph = 2; // For B0
+					const bet = 4; // For B0
+					console.log('      alph (for B0):', alph);
+					console.log('      bet (for B0):', bet);
+
+					// det diff, edgeTangents[I]
+					const cross = math.det([diff, edgeTangents[I]]);
+					console.log('      cross product:', cross);
+
+					const cross_norm = math.norm(cross);
+					console.log('      cross_norm:', cross_norm);
+
+					const k_numerator = Math.pow(cross_norm, alph);
+					console.log('      k_numerator:', k_numerator);
+
+					const k_denominator = Math.pow(diff_norm, bet);
+					console.log('      k_denominator:', k_denominator);
+
+					const k = k_numerator / k_denominator;
+					console.log('      k:', k);
+					if (!Number.isFinite(k)) {
+						console.error(
+							'      k is not finite! k_numerator:',
+							k_numerator,
+							'k_denominator:',
+							k_denominator
+						);
+					}
+
+					const term2 = k / Math.pow(diff_norm, 2 * sigma + 1);
+					console.log('      term2:', term2);
+					if (!Number.isFinite(term2)) {
+						console.error(
+							'      term2 is not finite! k:',
+							k,
+							'diff_norm:',
+							diff_norm,
+							'2 * sigma + 1:',
+							2 * sigma + 1
+						);
+					}
+					elt2 += term2;
+					console.log('      elt2 (after adding term2):', elt2);
+				}
+			}
+			console.log('  elt1 (final):', elt1);
+			console.log('  elt2 (final):', elt2);
+
+			const w_ij_factor = 0.25 * edgeLengths[I] * edgeLengths[J];
+			console.log('  w_ij_factor:', w_ij_factor);
+
+			const W_IJ = w_ij_factor * elt1;
+			console.log('  W_IJ:', W_IJ);
+			if (!Number.isFinite(W_IJ)) {
+				console.error('  W_IJ is not finite! w_ij_factor:', w_ij_factor, 'elt1:', elt1);
+			}
+			W.set([I, J], W_IJ);
+			console.log('  W (after setting):', W);
+
+			const W0_IJ = w_ij_factor * elt2;
+			console.log('  W0_IJ:', W0_IJ);
+			if (!Number.isFinite(W0_IJ)) {
+				console.error('  W0_IJ is not finite! w_ij_factor:', w_ij_factor, 'elt2:', elt2);
+			}
+			W0.set([I, J], W0_IJ);
+			console.log('  W0 (after setting):', W0);
+		}
+	}
+
+	console.log('Returning from build_weights');
+	return { W, W0 };
+}
+
+function calculateLowOrderTerm(vertices, edges, sigma, W0) {
 	const numVertices = vertices.length;
 	const B0 = math.zeros(numVertices, numVertices);
-	const { edgeLengths, edgeTangents } = calculateEdgeProperties(vertices, edges);
 	const disjointEdges = calculateDisjointEdgePairs(edges); // Use your existing function
 
 	for (let I = 0; I < edges.length; I++) {
 		for (const J of disjointEdges[I]) {
-			// Iterate directly over disjoint edges of I
-			const [i1, i2] = edges[I];
-			const [j1, j2] = edges[J];
-			const l_I = edgeLengths[I];
-			const l_J = edgeLengths[J];
-			const T_I = edgeTangents[I];
-
-			let w_IJ_0 = 0;
-			const pairs = [
-				[i1, j1],
-				[i1, j2],
-				[i2, j1],
-				[i2, j2]
-			];
-			for (const [i, j] of pairs) {
-				const diff = math.subtract(vertices[i], vertices[j]);
-				const dist = math.norm(diff) + 1e-8;
-				const kernel = tangentPointKernel(vertices[i], vertices[j], T_I, alpha, beta); // Use your kernel function
-				w_IJ_0 += kernel / Math.pow(dist, 2 * sigma + 1 - beta); // Correct denominator
-			}
-			w_IJ_0 *= (l_I * l_J) / 4;
+			const w_IJ_0 = W0.get([I, J]); // Get the precomputed weight
 
 			// Apply the increments
 			for (let a = 0; a < 2; a++) {
@@ -54,43 +179,26 @@ function calculateLowOrderTerm(vertices, edges, sigma, alpha = 2, beta = 4) {
 			}
 		}
 	}
-
+	console.log('Low order term B0:', B0.toArray());
 	return B0;
 }
 
-function calculateHighOrderTerm(vertices, edges, sigma) {
+function calculateHighOrderTerm(vertices, edges, sigma, W) {
 	const numVertices = vertices.length;
 	const B = math.zeros(numVertices, numVertices);
 	const { edgeLengths, edgeTangents } = calculateEdgeProperties(vertices, edges);
-	const disjointEdges = calculateDisjointEdgePairs(edges); // Use your existing function
+	const disjointEdges = calculateDisjointEdgePairs(edges);
 
 	for (let I = 0; I < edges.length; I++) {
 		for (const J of disjointEdges[I]) {
-			// Iterate directly over disjoint edges of I
-			const [i1, i2] = edges[I];
-			const [j1, j2] = edges[J];
 			const l_I = edgeLengths[I];
 			const l_J = edgeLengths[J];
 			const T_I = edgeTangents[I];
 			const T_J = edgeTangents[J];
 
-			let w_IJ = 0;
-			const pairs = [
-				[i1, j1],
-				[i1, j2],
-				[i2, j1],
-				[i2, j2]
-			];
-			for (const [i, j] of pairs) {
-				const diff = math.subtract(vertices[i], vertices[j]);
-				const dist = math.norm(diff) + 1e-8; // Add small epsilon for numerical stability
-				w_IJ += 1 / Math.pow(dist, 2 * sigma + 1);
-			}
-			w_IJ *= (l_I * l_J) / 4;
-
+			const w_IJ = W.get([I, J]); // Get the precomputed weight
 			const dot_TI_TJ = math.dot(T_I, T_J);
 
-			// Apply the increments as described in the paper
 			for (let a = 0; a < 2; a++) {
 				for (let b = 0; b < 2; b++) {
 					const sign = Math.pow(-1, a + b);
@@ -99,26 +207,25 @@ function calculateHighOrderTerm(vertices, edges, sigma) {
 					const j_a = edges[J][a];
 					const j_b = edges[J][b];
 
-					B.set([i_a, i_b], B.get([i_a, i_b]) + (sign * w_IJ) / (l_I * l_I));
-					B.set([j_a, j_b], B.get([j_a, j_b]) + (sign * w_IJ) / (l_J * l_J));
-					B.set([i_a, j_b], B.get([i_a, j_b]) - (sign * w_IJ * dot_TI_TJ) / (l_I * l_J));
-					B.set([j_a, i_b], B.get([j_a, i_b]) - (sign * w_IJ * dot_TI_TJ) / (l_I * l_J));
+					const val_1 = (sign * w_IJ) / (l_I * l_I);
+					const val_2 = (sign * w_IJ) / (l_J * l_J);
+					const val_3 = (sign * w_IJ * dot_TI_TJ) / (l_I * l_J);
+
+					B.set([i_a, i_b], B.get([i_a, i_b]) + val_1);
+					B.set([j_a, j_b], B.get([j_a, j_b]) + val_2);
+					B.set([i_a, j_b], B.get([i_a, j_b]) - val_3);
+					B.set([j_a, i_b], B.get([j_a, i_b]) - val_3);
 				}
 			}
 		}
 	}
 
+	console.log('High order term B:', B.toArray());
 	return B;
 }
 
-export function calculateDiscreteInnerProduct(vertices, edges, edgeTangents, alpha, beta) {
+export function calculateDiscreteInnerProduct(vertices, edges, edgeTangents, alpha, beta, B, B0) {
 	console.log('Calculating discrete inner product with alpha:', alpha, 'beta:', beta);
-	const s = (beta - 1) / alpha;
-	const sigma = s - 1;
-	console.log('Computed s:', s, 'Sigma (s - 1):', sigma);
-
-	const B0 = calculateLowOrderTerm(vertices, edges, edgeTangents, sigma, alpha, beta); // Pass alpha and beta
-	const B = calculateHighOrderTerm(vertices, edges, edgeTangents, sigma);
 	let A = math.add(B0, B);
 	console.log('Initial A Matrix (B0 + B):', A.toArray());
 
@@ -148,9 +255,21 @@ export function calculateDiscreteInnerProduct(vertices, edges, edgeTangents, alp
 	return { A_reg, B0, B };
 }
 
-export function build_A_bar_2D(vertices, edges, sigma) {
-	const B = calculateHighOrderTerm(vertices, edges, sigma);
-	const B0 = calculateLowOrderTerm(vertices, edges, sigma);
+export function build_A_bar_2D(alpha, beta, vertices, edges, sigma) {
+	const { edgeLengths, edgeTangents } = calculateEdgeProperties(vertices, edges);
+	const disjointEdges = calculateDisjointEdgePairs(edges);
+
+	const { W, W0 } = build_weights(
+		alpha,
+		beta,
+		edges,
+		disjointEdges,
+		vertices,
+		edgeTangents,
+		edgeLengths
+	);
+	const B = calculateHighOrderTerm(vertices, edges, sigma, W);
+	const B0 = calculateLowOrderTerm(vertices, edges, sigma, W0);
 	const A = math.add(B, B0);
 
 	const numVertices = vertices.length;
@@ -163,7 +282,7 @@ export function build_A_bar_2D(vertices, edges, sigma) {
 		A
 	);
 
-	return A_bar;
+	return { A_bar, B, B0 };
 }
 
 export function computePreconditionedGradient(
@@ -175,9 +294,11 @@ export function computePreconditionedGradient(
 	differential
 ) {
 	console.log('Computing preconditioned gradient with differential:', differential);
-	const { A } = calculateDiscreteInnerProduct(vertices, edges, edgeTangents, alpha, beta);
 	const numVertices = vertices.length;
 	const AFull = math.zeros(numVertices * 2, numVertices * 2);
+	const sigma = (beta - 1) / alpha;
+	const { A_bar, B, B0 } = build_A_bar_2D(alpha, beta, vertices, edges, sigma);
+	const A = A_bar;
 
 	console.log('Constructing AFull...');
 	for (let i = 0; i < numVertices; i++) {
