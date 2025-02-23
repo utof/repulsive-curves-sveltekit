@@ -1,5 +1,5 @@
 // src/lib/optimization.js
-import { calculateL2Gradient, calculateDiscreteEnergy } from '$lib/energyCalculations';
+import { calculateL2Gradient } from '$lib/energyCalculations';
 
 export function gradientDescentStep(
 	vertices,
