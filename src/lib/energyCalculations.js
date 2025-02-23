@@ -167,3 +167,34 @@ export function calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPa
 	}
 	return totalEnergy / 2; // Divide by 2 because of symmetry
 }
+
+// Function to calculate the L2 gradient
+export function calculateL2Gradient(vertices, edges, alpha, beta, disjointPairs) {
+	const h = 0.0001; // Small change for finite differences
+	const numVertices = vertices.length;
+	const gradient = [];
+
+	const originalEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+
+	for (let i = 0; i < numVertices; i++) {
+		gradient[i] = [0, 0]; // Initialize gradient for this vertex
+
+		for (let j = 0; j < 2; j++) {
+			// x and y coordinates
+			// Perturb the vertex coordinate
+			const originalValue = vertices[i][j];
+			vertices[i][j] += h;
+
+			// Recalculate the energy
+			const newEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+
+			// Approximate the partial derivative
+			gradient[i][j] = (newEnergy - originalEnergy) / h;
+
+			// Restore the original value
+			vertices[i][j] = originalValue;
+		}
+	}
+
+	return gradient;
+}
