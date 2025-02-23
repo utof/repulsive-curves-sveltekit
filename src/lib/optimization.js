@@ -5,8 +5,11 @@ import { computePreconditionedGradient } from '$lib/innerProduct';
 export function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs, stepSize) {
 	console.log('Gradient Descent Step - Initial vertices:', JSON.stringify(vertices));
 	const { edgeTangents } = calculateEdgeProperties(vertices, edges);
+	console.log('Edge tangents:', edgeTangents);
+
 	const L2Gradient = calculateL2Gradient(vertices, edges, alpha, beta, disjointPairs);
 	console.log('L2 Gradient:', JSON.stringify(L2Gradient));
+
 	const gradient = computePreconditionedGradient(
 		vertices,
 		edges,
@@ -32,7 +35,7 @@ export function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs,
 		return [newX, newY];
 	});
 
-	console.log('New vertices:', JSON.stringify(newVertices));
+	console.log('New vertices after step:', JSON.stringify(newVertices));
 	return newVertices;
 }
 
