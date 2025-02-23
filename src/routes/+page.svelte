@@ -10,6 +10,7 @@
 	import { drawGraph, drawKernelMatrix } from '$lib/graphDrawing';
 	import { createOptimizer } from '$lib/optimization';
 	import { generateRandomGraph, drawArrow } from '$lib/graphUtils';
+	import { setupInteractions } from '$lib/interaction'; // Import the interaction handler
 
 	let canvas;
 	let ctx;
@@ -31,11 +32,7 @@
 	const stepSize = 0.01;
 	const maxIterations = 100;
 	let optimizer = null;
-
-	// Dragging state
-	let draggingVertex = null;
-	let dragOffsetX = 0;
-	let dragOffsetY = 0;
+	let cleanupInteractions; // Store the cleanup function
 
 	onMount(() => {
 		canvas = document.getElementById('graphCanvas');
@@ -45,11 +42,17 @@
 
 		regenerateGraph(); // Initial graph
 
-		// Add event listeners for mouse events
-		canvas.addEventListener('mousedown', handleMouseDown);
-		canvas.addEventListener('mousemove', handleMouseMove);
-		canvas.addEventListener('mouseup', handleMouseUp);
-		canvas.addEventListener('mouseleave', handleMouseUp); // Stop dragging if mouse leaves canvas
+		// Setup interactions and store the cleanup function
+		cleanupInteractions = setupInteractions(
+			canvas,
+			vertices,
+			() => {
+				calculateAndDrawKernel();
+				drawGraph(ctx, width, height, vertices, edges, edgeProps, kernelMatrix);
+			},
+			width,
+			height
+		);
 
 		optimizer = createOptimizer(
 			vertices,
@@ -74,12 +77,9 @@
 		if (optimizer) {
 			optimizer.stop(); // Clean up the optimizer
 		}
-		// Remove event listeners
-		if (canvas) {
-			canvas.removeEventListener('mousedown', handleMouseDown);
-			canvas.removeEventListener('mousemove', handleMouseMove);
-			canvas.removeEventListener('mouseup', handleMouseUp);
-			canvas.removeEventListener('mouseleave', handleMouseUp);
+		// Cleanup interactions
+		if (cleanupInteractions) {
+			cleanupInteractions();
 		}
 	});
 
@@ -122,51 +122,6 @@
 		}
 	}
 
-	// Mouse event handlers
-	function handleMouseDown(event) {
-		const rect = canvas.getBoundingClientRect();
-		const mouseX = event.clientX - rect.left;
-		const mouseY = event.clientY - rect.top;
-
-		// Check if the mouse is over a vertex
-		for (let i = 0; i < vertices.length; i++) {
-			const [vx, vy] = vertices[i];
-			const distance = Math.sqrt((mouseX - vx) ** 2 + (mouseY - vy) ** 2);
-			if (distance <= 5) {
-				// 5 is the vertex radius
-				draggingVertex = i;
-				dragOffsetX = vx - mouseX;
-				dragOffsetY = vy - mouseY;
-				break;
-			}
-		}
-	}
-
-	function handleMouseMove(event) {
-		if (draggingVertex !== null) {
-			const rect = canvas.getBoundingClientRect();
-			const mouseX = event.clientX - rect.left;
-			const mouseY = event.clientY - rect.top;
-
-			// Update vertex position, constrained to canvas bounds
-			let newX = mouseX + dragOffsetX;
-			let newY = mouseY + dragOffsetY;
-
-			newX = Math.max(0, Math.min(width, newX)); //Clamp inside
-			newY = Math.max(0, Math.min(height, newY));
-
-			vertices[draggingVertex] = [newX, newY];
-
-			// Recalculate and redraw
-			calculateAndDrawKernel();
-			drawGraph(ctx, width, height, vertices, edges, edgeProps, kernelMatrix);
-		}
-	}
-
-	function handleMouseUp(event) {
-		draggingVertex = null;
-	}
-
 	function getEnergyChangeColor() {
 		return energyChange < 0 ? 'green' : 'red';
 	}
@@ -197,7 +152,6 @@
 	<div class="kernel-section">
 		<canvas id="kernelCanvas"></canvas>
 	</div>
-	content_copy download
 </div>
 
 <style>
