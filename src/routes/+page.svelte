@@ -4,7 +4,9 @@
 		calculateEdgeProperties,
 		calculateDisjointEdgePairs,
 		calculateDiscreteKernel,
-		calculateDiscreteEnergy
+		calculateDiscreteEnergy,
+		computeGradient, // Import the new function
+		calculateE_adj
 	} from '$lib/energyCalculations';
 	import { drawGraph, drawKernelMatrix } from '$lib/graphDrawing';
 	import { createOptimizer } from '$lib/optimization';
