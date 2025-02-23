@@ -25,7 +25,8 @@
 	const height = 700;
 	const alpha = 3;
 	const beta = 6;
-	const stepSize = 5000;
+	const stepSize = 0.0005;
+	// const stepSize = 50;
 	const maxIterations = 1000;
 
 	onMount(() => {

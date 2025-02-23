@@ -1,5 +1,6 @@
 // src/lib/optimization.js
-import { calculateL2Gradient } from '$lib/energyCalculations';
+import { calculateL2Gradient, calculateEdgeProperties } from '$lib/energyCalculations';
+import { computePreconditionedGradient } from '$lib/innerProduct';
 
 export function gradientDescentStep(
 	vertices,
@@ -11,13 +12,25 @@ export function gradientDescentStep(
 	width,
 	height
 ) {
-	const gradient = calculateL2Gradient(vertices, edges, alpha, beta, disjointPairs);
+	console.log('Gradient Descent Step - Initial vertices:', vertices);
+	const { edgeTangents } = calculateEdgeProperties(vertices, edges);
+	const L2Gradient = calculateL2Gradient(vertices, edges, alpha, beta, disjointPairs);
+	const sigma = beta / alpha - 1.5;
+	console.log('Sigma:', sigma);
+	const gradient = computePreconditionedGradient(vertices, edges, edgeTangents, sigma, L2Gradient);
 
-	return vertices.map((vertex, i) => {
-		const newX = Math.max(0, Math.min(width, vertex[0] - stepSize * gradient[i][0]));
-		const newY = Math.max(0, Math.min(height, vertex[1] - stepSize * gradient[i][1]));
+	const newVertices = vertices.map((vertex, i) => {
+		const gradX = gradient[i][0];
+		const gradY = gradient[i][1];
+		const newX = Math.max(0, Math.min(width, vertex[0] - stepSize * (isNaN(gradX) ? 0 : gradX)));
+		const newY = Math.max(0, Math.min(height, vertex[1] - stepSize * (isNaN(gradY) ? 0 : gradY)));
+		console.log(
+			`Vertex[${i}] update: [${vertex[0]}, ${vertex[1]}] -> [${newX}, ${newY}] with grad [${gradX}, ${gradY}]`
+		);
 		return [newX, newY];
 	});
+
+	return newVertices;
 }
 
 export function createOptimizer(
@@ -37,6 +50,7 @@ export function createOptimizer(
 
 	const step = () => {
 		if (currentIteration < maxIterations) {
+			console.log(`Optimization Step ${currentIteration}`);
 			const newVertices = gradientDescentStep(
 				vertices,
 				edges,

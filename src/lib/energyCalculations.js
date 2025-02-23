@@ -1,5 +1,7 @@
 import * as math from 'mathjs';
 
+let logging = false;
+
 export function calculateEdgeProperties(vertices, edges) {
 	const edgeLengths = [];
 	const edgeTangents = [];
@@ -9,24 +11,32 @@ export function calculateEdgeProperties(vertices, edges) {
 		const v1 = vertices[edge[0]];
 		const v2 = vertices[edge[1]];
 
-		// Calculate edge length (l)
 		const dx = v2[0] - v1[0];
 		const dy = v2[1] - v1[1];
 		const length = Math.sqrt(dx * dx + dy * dy);
 		edgeLengths.push(length);
 
-		// Calculate unit tangent (T)
-		const unitTangent = [dx / length, dy / length];
+		const unitTangent = length > 0 ? [dx / length, dy / length] : [0, 0];
 		edgeTangents.push(unitTangent);
 
-		// Calculate midpoint
-		const midpoint = [(v1[0] + v2[0]) / 2, (v1[1] + v2[1]) / 2];
+		const midpoint = [
+			isNaN(v1[0]) || isNaN(v2[0]) ? 0 : (v1[0] + v2[0]) / 2,
+			isNaN(v1[1]) || isNaN(v2[1]) ? 0 : (v1[1] + v2[1]) / 2
+		];
 		edgeMidpoints.push(midpoint);
+
+		if (logging) {
+			console.log(
+				`Edge [${edge[0]}, ${edge[1]}]: length = ${length}, tangent = ${unitTangent}, midpoint = ${midpoint}`
+			);
+		}
 	}
 
-	console.log('Edge lengths:', edgeLengths);
-	console.log('Unit tangents:', edgeTangents);
-	console.log('Midpoints:', edgeMidpoints);
+	if (logging) {
+		console.log('Edge lengths:', edgeLengths);
+		console.log('Unit tangents:', edgeTangents);
+		console.log('Midpoints:', edgeMidpoints);
+	}
 
 	return { edgeLengths, edgeTangents, edgeMidpoints };
 }
