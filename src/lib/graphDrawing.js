@@ -2,143 +2,101 @@
 import * as math from 'mathjs';
 import { drawArrow } from '$lib/graphUtils';
 
-import {
-	calculateEdgeProperties,
-	calculateDisjointEdgePairs,
-	calculateDiscreteKernel,
-	calculateDiscreteEnergy
-} from '$lib/energyCalculations';
-
 export function drawGraph(ctx, width, height, vertices, edges, edgeProps, kernelMatrix) {
 	ctx.clearRect(0, 0, width, height);
 
-	// Draw edges with varying thickness and color based on kernel values
-	if (kernelMatrix) {
-		const maxKernelValue = math.max(kernelMatrix);
-		console.log('Max kernel value:', maxKernelValue);
+	drawEdges(ctx, vertices, edges, kernelMatrix);
+	drawVertices(ctx, vertices);
+	drawMidpoints(ctx, edges, edgeProps);
+}
 
-		for (let i = 0; i < edges.length; i++) {
-			const edge = edges[i];
+function drawEdges(ctx, vertices, edges, kernelMatrix) {
+	if (kernelMatrix && math.isMatrix(kernelMatrix) && kernelMatrix.size()[0] === edges.length) {
+		const maxKernelValue = math.max(kernelMatrix) || 1; // Avoid division by zero
 
-			// Calculate average kernel value for this edge
-			let totalKernel = 0;
-			let count = 0;
-			for (let j = 0; j < edges.length; j++) {
-				if (i !== j) {
-					totalKernel += kernelMatrix.get([i, j]);
-					count++;
-				}
-			}
-			const avgKernel = totalKernel / (count || 1);
+		edges.forEach((edge, i) => {
+			const totalKernel = edges.reduce((sum, _, j) => {
+				return i !== j ? sum + kernelMatrix.get([i, j]) : sum;
+			}, 0);
+			const avgKernel = totalKernel / (edges.length - 1 || 1);
 			const normalizedValue = avgKernel / maxKernelValue;
 
-			console.log(`Edge ${i} avg kernel:`, avgKernel, 'normalized:', normalizedValue);
-
-			// Calculate color (blue to red gradient)
 			const blue = Math.round(255 * (1 - normalizedValue));
 			const red = Math.round(255 * normalizedValue);
 
-			// Set line properties
 			ctx.strokeStyle = `rgb(${red}, 0, ${blue})`;
-			ctx.lineWidth = 1 + normalizedValue * 4; // Thickness varies from 1 to 5 pixels
+			ctx.lineWidth = 1 + normalizedValue * 4;
 
-			// Draw edge
 			ctx.beginPath();
 			ctx.moveTo(vertices[edge[0]][0], vertices[edge[0]][1]);
 			ctx.lineTo(vertices[edge[1]][0], vertices[edge[1]][1]);
 			ctx.stroke();
-		}
+		});
+	} else {
+		// Fallback: Draw edges with default style
+		ctx.strokeStyle = 'black';
+		ctx.lineWidth = 1;
+		edges.forEach((edge) => {
+			ctx.beginPath();
+			ctx.moveTo(vertices[edge[0]][0], vertices[edge[0]][1]);
+			ctx.lineTo(vertices[edge[1]][0], vertices[edge[1]][1]);
+			ctx.stroke();
+		});
 	}
+}
 
-	// Draw vertices
-	for (let i = 0; i < vertices.length; i++) {
-		// Draw vertex circle
+function drawVertices(ctx, vertices) {
+	vertices.forEach((vertex, i) => {
 		ctx.beginPath();
-		ctx.arc(vertices[i][0], vertices[i][1], 5, 0, 2 * Math.PI);
+		ctx.arc(vertex[0], vertex[1], 5, 0, 2 * Math.PI);
 		ctx.fillStyle = 'blue';
 		ctx.fill();
 
-		// Draw vertex number
 		ctx.fillStyle = 'black';
 		ctx.font = '12px Arial';
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
-		ctx.fillText(i.toString(), vertices[i][0], vertices[i][1]);
+		ctx.fillText(i.toString(), vertex[0], vertex[1]);
+	});
+}
+
+function drawMidpoints(ctx, edges, edgeProps) {
+	if (!edgeProps || !edgeProps.edgeMidpoints || edgeProps.edgeMidpoints.length !== edges.length) {
+		return;
 	}
 
-	// Draw midpoints with edge information and tangent arrows
 	ctx.font = '10px Arial';
 	ctx.textAlign = 'center';
 	ctx.textBaseline = 'bottom';
 
-	for (let i = 0; i < edges.length; i++) {
+	edges.forEach((edge, i) => {
 		const midpoint = edgeProps.edgeMidpoints[i];
-		const length = edgeProps.edgeLengths[i].toFixed(2);
+		const length = edgeProps.edgeLengths[i];
 		const tangent = edgeProps.edgeTangents[i];
 
-		// Draw midpoint dot
+		if (!midpoint || !length || !tangent) return;
+
 		ctx.fillStyle = 'red';
 		ctx.beginPath();
 		ctx.arc(midpoint[0], midpoint[1], 2, 0, 2 * Math.PI);
 		ctx.fill();
 
-		// Draw edge information
 		ctx.fillStyle = 'blue';
-		ctx.fillText(`L ${parseFloat(length).toFixed(6)}`, midpoint[0], midpoint[1] - 15);
+		ctx.fillText(`L ${length.toFixed(6)}`, midpoint[0], midpoint[1] - 15);
 		ctx.fillText(`T ${tangent.map((t) => t.toFixed(1))}`, midpoint[0], midpoint[1] - 5);
-		ctx.fillText(`${edges[i][0]}, ${edges[i][1]}`, midpoint[0], midpoint[1] + 15);
+		ctx.fillText(`${edge[0]}, ${edge[1]}`, midpoint[0], midpoint[1] + 15);
 
-		// Draw tangent arrow
 		ctx.strokeStyle = 'green';
 		ctx.lineWidth = 1.5;
 		drawArrow(ctx, midpoint[0], midpoint[1], tangent[0], tangent[1], 20);
-	}
+	});
 }
 
-export function setupKernel(kernelCanvas, vertices, edges, alpha, beta) {
-	if (!kernelCanvas) return { kernelMatrix: null, discreteEnergy: 0 };
+export function drawKernelMatrix(kernelCanvas, kernelMatrix) {
+	if (!kernelCanvas || !kernelMatrix || !math.isMatrix(kernelMatrix)) return;
 
-	const kernelCtx = kernelCanvas.getContext('2d');
-	const disjointPairs = calculateDisjointEdgePairs(edges); // Calculate once
-	let edgeProps = calculateEdgeProperties(vertices, edges);
-	let kernelMatrix = calculateDiscreteKernel(
-		vertices,
-		edges,
-		edgeProps.edgeTangents,
-		alpha,
-		beta,
-		disjointPairs
-	);
-	let discreteEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
-
-	drawKernelMatrix(kernelCtx, kernelMatrix);
-
-	return {
-		kernelMatrix,
-		discreteEnergy,
-		disjointPairs, // Include disjointPairs in the returned object
-		update: () => {
-			edgeProps = calculateEdgeProperties(vertices, edges); // Recalculate on update
-			kernelMatrix = calculateDiscreteKernel(
-				vertices,
-				edges,
-				edgeProps.edgeTangents,
-				alpha,
-				beta,
-				disjointPairs // Reuse the same disjointPairs
-			);
-			discreteEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
-			drawKernelMatrix(kernelCtx, kernelMatrix); // Redraw on update
-			return { kernelMatrix, discreteEnergy };
-		},
-		edgeProps
-	};
-}
-
-function drawKernelMatrix(kernelCtx, matrix) {
-	if (!kernelCtx || !matrix) return;
-
-	const size = matrix.size();
+	const ctx = kernelCanvas.getContext('2d');
+	const size = kernelMatrix.size();
 	const padding = 50;
 	const maxWidth = Math.min(window.innerWidth / 2, 800);
 	const maxContentWidth = maxWidth - padding * 2;
@@ -152,53 +110,53 @@ function drawKernelMatrix(kernelCtx, matrix) {
 	const canvasWidth = Math.min(maxWidth, padding * 2 + size[1] * cellSize);
 	const canvasHeight = padding * 2 + size[0] * cellSize;
 
-	kernelCtx.width = canvasWidth;
-	kernelCtx.height = canvasHeight;
-	kernelCtx.clearRect(0, 0, kernelCtx.width, kernelCtx.height);
+	kernelCanvas.width = canvasWidth;
+	kernelCanvas.height = canvasHeight;
+	kernelCanvas.style.width = `${canvasWidth}px`;
+	kernelCanvas.style.height = `${canvasHeight}px`;
 
-	const maxVal = math.max(matrix);
+	ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+	const maxVal = math.max(kernelMatrix) || 1; // Avoid division by zero
 
 	for (let i = 0; i < size[0]; i++) {
 		for (let j = 0; j < size[1]; j++) {
-			const value = matrix.get([i, j]);
+			const value = kernelMatrix.get([i, j]);
 			const intensity = value / maxVal;
 			const r = Math.round(255 - intensity * 255);
 			const g = Math.round(255 - intensity * 255);
 			const b = 255;
 			const minOpacity = 0.1;
 			const opacity = minOpacity + (1 - minOpacity) * intensity;
-			const color = `rgba(${r}, ${g}, ${b}, ${opacity})`;
-
-			kernelCtx.fillStyle = color;
-			kernelCtx.fillRect(padding + j * cellSize, padding + i * cellSize, cellSize, cellSize);
+			ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+			ctx.fillRect(padding + j * cellSize, padding + i * cellSize, cellSize, cellSize);
 		}
 	}
 
-	kernelCtx.strokeStyle = 'black';
-	kernelCtx.lineWidth = 1;
+	ctx.strokeStyle = 'black';
+	ctx.lineWidth = 1;
 	for (let i = 0; i <= size[0]; i++) {
-		kernelCtx.beginPath();
-		kernelCtx.moveTo(padding, padding + i * cellSize);
-		kernelCtx.lineTo(padding + size[1] * cellSize, padding + i * cellSize);
-		kernelCtx.stroke();
+		ctx.beginPath();
+		ctx.moveTo(padding, padding + i * cellSize);
+		ctx.lineTo(padding + size[1] * cellSize, padding + i * cellSize);
+		ctx.stroke();
 	}
 	for (let j = 0; j <= size[1]; j++) {
-		kernelCtx.beginPath();
-		kernelCtx.moveTo(padding + j * cellSize, padding);
-		kernelCtx.lineTo(padding + j * cellSize, padding + size[0] * cellSize);
-		kernelCtx.stroke();
+		ctx.beginPath();
+		ctx.moveTo(padding + j * cellSize, padding);
+		ctx.lineTo(padding + j * cellSize, padding + size[0] * cellSize);
+		ctx.stroke();
 	}
 
-	kernelCtx.fillStyle = 'black';
-	kernelCtx.font = '12px Arial';
-	kernelCtx.textAlign = 'center';
-
+	ctx.fillStyle = 'black';
+	ctx.font = '12px Arial';
+	ctx.textAlign = 'center';
 	for (let j = 0; j < size[1]; j++) {
-		kernelCtx.fillText(j.toString(), padding + j * cellSize + cellSize / 2, padding - 10);
+		ctx.fillText(j.toString(), padding + j * cellSize + cellSize / 2, padding - 10);
 	}
 
-	kernelCtx.textAlign = 'right';
+	ctx.textAlign = 'right';
 	for (let i = 0; i < size[0]; i++) {
-		kernelCtx.fillText(i.toString(), padding - 5, padding + i * cellSize + cellSize / 2);
+		ctx.fillText(i.toString(), padding - 5, padding + i * cellSize + cellSize / 2);
 	}
 }
