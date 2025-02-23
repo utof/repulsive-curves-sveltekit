@@ -1,29 +1,19 @@
 <script>
 	import { onMount, onDestroy } from 'svelte';
-	import {
-		calculateEdgeProperties,
-		calculateDisjointEdgePairs,
-		calculateDiscreteKernel,
-		calculateDiscreteEnergy,
-		calculateL2Gradient
-	} from '$lib/energyCalculations';
-	import { drawGraph, drawKernelMatrix } from '$lib/graphDrawing';
+	import { drawGraph, setupKernel } from '$lib/graphDrawing'; // Single-line import
 	import { createOptimizer } from '$lib/optimization';
-	import { generateRandomGraph, drawArrow } from '$lib/graphUtils';
-	import { setupInteractions } from '$lib/interaction'; // Import the interaction handler
+	import { generateRandomGraph } from '$lib/graphUtils';
+	import { setupInteractions } from '$lib/interaction';
 
 	let canvas;
 	let ctx;
 	let vertices = [];
 	let edges = [];
-	let edgeProps = { edgeLengths: [], edgeTangents: [], edgeMidpoints: [] };
 	let kernelCanvas;
-	let kernelCtx;
+	let kernel; // Store kernel object
 	let discreteEnergy = 0;
-	let previousEnergy = 0; // Store the previous energy value
+	let previousEnergy = 0;
 	let energyChange = 0;
-	let kernelMatrix = null;
-	let disjointPairs = [];
 
 	const width = 700;
 	const height = 700;
@@ -32,82 +22,68 @@
 	const stepSize = 0.01;
 	const maxIterations = 100;
 	let optimizer = null;
-	let cleanupInteractions; // Store the cleanup function
+	let cleanupInteractions;
 
 	onMount(() => {
 		canvas = document.getElementById('graphCanvas');
 		ctx = canvas.getContext('2d');
 		kernelCanvas = document.getElementById('kernelCanvas');
-		kernelCtx = kernelCanvas.getContext('2d');
 
 		regenerateGraph(); // Initial graph
 
-		// Setup interactions and store the cleanup function
-		cleanupInteractions = setupInteractions(
-			canvas,
-			vertices,
-			() => {
-				calculateAndDrawKernel();
-				drawGraph(ctx, width, height, vertices, edges, edgeProps, kernelMatrix);
-			},
-			width,
-			height
-		);
+		cleanupInteractions = setupInteractions(canvas, vertices, updateVisualization, width, height);
 
 		optimizer = createOptimizer(
 			vertices,
 			edges,
 			alpha,
 			beta,
-			disjointPairs,
+			kernel ? kernel.disjointPairs : [], // Use kernel.disjointPairs if available
 			stepSize,
 			width,
 			height,
 			maxIterations,
-			() => {
-				// onUpdate callback
-				disjointPairs = calculateDisjointEdgePairs(edges);
-				calculateAndDrawKernel();
-				drawGraph(ctx, width, height, vertices, edges, edgeProps, kernelMatrix);
-			}
+			updateVisualization // Use a single update function
 		);
 	});
 
 	onDestroy(() => {
 		if (optimizer) {
-			optimizer.stop(); // Clean up the optimizer
+			optimizer.stop();
 		}
-		// Cleanup interactions
 		if (cleanupInteractions) {
 			cleanupInteractions();
 		}
 	});
 
-	function calculateAndDrawKernel() {
-		previousEnergy = discreteEnergy; // Store before recalculating
-		edgeProps = calculateEdgeProperties(vertices, edges);
-		kernelMatrix = calculateDiscreteKernel(
+	function updateVisualization() {
+		if (kernel) {
+			const updatedKernelData = kernel.update(); // Call the update function
+			discreteEnergy = updatedKernelData.discreteEnergy;
+			energyChange = discreteEnergy - previousEnergy;
+			previousEnergy = discreteEnergy;
+		}
+		drawGraph(
+			ctx,
+			width,
+			height,
 			vertices,
 			edges,
-			edgeProps.edgeTangents,
-			alpha,
-			beta,
-			disjointPairs
+			kernel ? kernel.edgeProps : { edgeLengths: [], edgeTangents: [], edgeMidpoints: [] },
+			kernel ? kernel.kernelMatrix : null
 		);
-		discreteEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
-		energyChange = discreteEnergy - previousEnergy; // Calculate the change
-		drawKernelMatrix(kernelCtx, kernelMatrix);
 	}
 
 	function regenerateGraph() {
-		previousEnergy = 0; // Reset previous energy
+		previousEnergy = 0;
 		energyChange = 0;
 		const newGraph = generateRandomGraph(width, height);
 		vertices = newGraph.vertices;
 		edges = newGraph.edges;
-		disjointPairs = calculateDisjointEdgePairs(edges);
-		calculateAndDrawKernel();
-		drawGraph(ctx, width, height, vertices, edges, edgeProps, kernelMatrix);
+
+		// Initialize or update kernel
+		kernel = kernel ? kernel.update() : setupKernel(kernelCanvas, vertices, edges, alpha, beta);
+		updateVisualization(); // Initial draw
 	}
 
 	function startOptimization() {
@@ -165,9 +141,4 @@
 	.kernel-section {
 		flex: 1; /* Allow both sections to grow and take available space */
 	}
-
-	/* If you need a fixed width for the kernel section, you can do this: */
-	/* .kernel-section { */
-	/*   width: 400px;  Adjust as needed */
-	/* } */
 </style>

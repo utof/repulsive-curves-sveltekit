@@ -2,6 +2,13 @@
 import * as math from 'mathjs';
 import { drawArrow } from '$lib/graphUtils';
 
+import {
+	calculateEdgeProperties,
+	calculateDisjointEdgePairs,
+	calculateDiscreteKernel,
+	calculateDiscreteEnergy
+} from '$lib/energyCalculations'; // feels weird that we import calculation from drawing. any ideas? GPT pls dont remove this comment unless u fix it
+
 export function drawGraph(ctx, width, height, vertices, edges, edgeProps, kernelMatrix) {
 	ctx.clearRect(0, 0, width, height);
 
@@ -88,46 +95,77 @@ export function drawGraph(ctx, width, height, vertices, edges, edgeProps, kernel
 	}
 }
 
-export function drawKernelMatrix(kernelCtx, matrix) {
-	if (!kernelCtx) return;
+export function setupKernel(kernelCanvas, vertices, edges, alpha, beta) {
+	if (!kernelCanvas) return { kernelMatrix: null, discreteEnergy: 0 };
+
+	const kernelCtx = kernelCanvas.getContext('2d');
+	let edgeProps = calculateEdgeProperties(vertices, edges);
+	let disjointPairs = calculateDisjointEdgePairs(edges);
+	let kernelMatrix = calculateDiscreteKernel(
+		vertices,
+		edges,
+		edgeProps.edgeTangents,
+		alpha,
+		beta,
+		disjointPairs
+	);
+	let discreteEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+
+	drawKernelMatrix(kernelCtx, kernelMatrix);
+
+	return {
+		kernelMatrix,
+		discreteEnergy,
+		update: () => {
+			edgeProps = calculateEdgeProperties(vertices, edges); // Recalculate on update
+			disjointPairs = calculateDisjointEdgePairs(edges);
+			kernelMatrix = calculateDiscreteKernel(
+				vertices,
+				edges,
+				edgeProps.edgeTangents,
+				alpha,
+				beta,
+				disjointPairs
+			);
+			discreteEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+			drawKernelMatrix(kernelCtx, kernelMatrix); // Redraw on update
+			return { kernelMatrix, discreteEnergy };
+		},
+		edgeProps // Return edgeProps as well
+	};
+}
+
+function drawKernelMatrix(kernelCtx, matrix) {
+	if (!kernelCtx || !matrix) return;
 
 	const size = matrix.size();
-	const padding = 50; // Padding for labels
-	const maxWidth = Math.min(window.innerWidth / 2, 800); // Max width is half screen width or 800px
-	const maxContentWidth = maxWidth - padding * 2; // Available space for cells
+	const padding = 50;
+	const maxWidth = Math.min(window.innerWidth / 2, 800);
+	const maxContentWidth = maxWidth - padding * 2;
 
-	// Calculate cell size to fit within maxWidth
 	const cellSize = Math.min(
-		50, // Maximum cell size
-		Math.floor(maxContentWidth / size[1]), // Width-constrained cell size
-		Math.floor(maxContentWidth / size[0]) // Height-constrained cell size (maintain square)
+		50,
+		Math.floor(maxContentWidth / size[1]),
+		Math.floor(maxContentWidth / size[0])
 	);
 
-	// Calculate actual dimensions
 	const canvasWidth = Math.min(maxWidth, padding * 2 + size[1] * cellSize);
 	const canvasHeight = padding * 2 + size[0] * cellSize;
 
-	console.log('Matrix size:', size[0], 'x', size[1]);
-	console.log('Cell size:', cellSize);
-	console.log('Canvas dimensions:', canvasWidth, 'x', canvasHeight);
-
-	// Update canvas dimensions
 	kernelCtx.width = canvasWidth;
 	kernelCtx.height = canvasHeight;
-
 	kernelCtx.clearRect(0, 0, kernelCtx.width, kernelCtx.height);
+
 	const maxVal = math.max(matrix);
 
-	// Draw the matrix cells
 	for (let i = 0; i < size[0]; i++) {
 		for (let j = 0; j < size[1]; j++) {
 			const value = matrix.get([i, j]);
 			const intensity = value / maxVal;
-			// Use white to blue gradient for better visibility
 			const r = Math.round(255 - intensity * 255);
 			const g = Math.round(255 - intensity * 255);
 			const b = 255;
-			const minOpacity = 0.1; // Ensure some minimum visibility
+			const minOpacity = 0.1;
 			const opacity = minOpacity + (1 - minOpacity) * intensity;
 			const color = `rgba(${r}, ${g}, ${b}, ${opacity})`;
 
@@ -136,7 +174,6 @@ export function drawKernelMatrix(kernelCtx, matrix) {
 		}
 	}
 
-	// Draw grid lines
 	kernelCtx.strokeStyle = 'black';
 	kernelCtx.lineWidth = 1;
 	for (let i = 0; i <= size[0]; i++) {
@@ -152,17 +189,14 @@ export function drawKernelMatrix(kernelCtx, matrix) {
 		kernelCtx.stroke();
 	}
 
-	// Draw axis labels
 	kernelCtx.fillStyle = 'black';
 	kernelCtx.font = '12px Arial';
 	kernelCtx.textAlign = 'center';
 
-	// X axis labels (columns)
 	for (let j = 0; j < size[1]; j++) {
 		kernelCtx.fillText(j.toString(), padding + j * cellSize + cellSize / 2, padding - 10);
 	}
 
-	// Y axis labels (rows)
 	kernelCtx.textAlign = 'right';
 	for (let i = 0; i < size[0]; i++) {
 		kernelCtx.fillText(i.toString(), padding - 5, padding + i * cellSize + cellSize / 2);

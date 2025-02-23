@@ -1,4 +1,4 @@
-import { calculateDisjointEdgePairs, calculateDiscreteEnergy } from '$lib/energyCalculations'; // Import from energyCalculations
+import { calculateDiscreteEnergy } from '$lib/energyCalculations'; // Import from energyCalculations
 
 function calculateL2Gradient(vertices, edges, alpha, beta, disjointPairs) {
 	const h = 0.0001; // Small change for finite differences
