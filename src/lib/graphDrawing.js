@@ -1,7 +1,7 @@
 // src/lib/graphDrawing.js
 import * as math from 'mathjs';
 import { drawArrow } from '$lib/graphUtils';
-import { calculateL2Gradient } from '$lib/energyCalculations';
+import { calculateDifferential } from '$lib/energyCalculations';
 
 export function drawGraph(
 	ctx,
@@ -60,7 +60,7 @@ function drawEdges(ctx, vertices, edges, kernelMatrix) {
 
 function drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs) {
 	// Added parameters
-	const gradient = calculateL2Gradient(vertices, edges, alpha, beta, disjointPairs);
+	const gradient = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
 
 	vertices.forEach((vertex, i) => {
 		// Draw circle

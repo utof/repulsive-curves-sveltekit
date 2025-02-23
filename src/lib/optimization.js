@@ -10,6 +10,7 @@ export function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs,
 	// Use the DIFFERENTIAL, not the L2 gradient
 	const differential = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
 	console.log('Differential:', JSON.stringify(differential));
+	console.log('Differential:', differential);
 
 	const gradient = computePreconditionedGradient(
 		vertices,

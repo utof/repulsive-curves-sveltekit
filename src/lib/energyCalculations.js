@@ -42,7 +42,7 @@ export function calculateEdgeProperties(vertices, edges) {
 	return { edgeLengths, edgeTangents, edgeMidpoints };
 }
 
-function tangentPointKernel(p, q, T, alpha, beta) {
+export function tangentPointKernel(p, q, T, alpha, beta) {
 	// For 2D vectors, cross product is just determinant of 2x2 matrix
 	const p_ = math.matrix(p);
 	const q_ = math.matrix(q);
