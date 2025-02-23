@@ -1,12 +1,25 @@
 // src/lib/graphDrawing.js
 import * as math from 'mathjs';
 import { drawArrow } from '$lib/graphUtils';
+import { calculateL2Gradient } from '$lib/energyCalculations';
 
-export function drawGraph(ctx, width, height, vertices, edges, edgeProps, kernelMatrix) {
+export function drawGraph(
+	ctx,
+	width,
+	height,
+	vertices,
+	edges,
+	edgeProps,
+	kernelMatrix,
+	alpha,
+	beta,
+	disjointPairs
+) {
+	// Added parameters
 	ctx.clearRect(0, 0, width, height);
 
 	drawEdges(ctx, vertices, edges, kernelMatrix);
-	drawVertices(ctx, vertices);
+	drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs); // Updated call
 	drawMidpoints(ctx, edges, edgeProps);
 }
 
@@ -45,18 +58,34 @@ function drawEdges(ctx, vertices, edges, kernelMatrix) {
 	}
 }
 
-function drawVertices(ctx, vertices) {
+function drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs) {
+	// Added parameters
+	const gradient = calculateL2Gradient(vertices, edges, alpha, beta, disjointPairs);
+
 	vertices.forEach((vertex, i) => {
+		// Draw circle
 		ctx.beginPath();
 		ctx.arc(vertex[0], vertex[1], 5, 0, 2 * Math.PI);
 		ctx.fillStyle = 'blue';
 		ctx.fill();
 
+		// Draw vertex index above
 		ctx.fillStyle = 'black';
 		ctx.font = '12px Arial';
 		ctx.textAlign = 'center';
-		ctx.textBaseline = 'middle';
-		ctx.fillText(i.toString(), vertex[0], vertex[1]);
+		ctx.textBaseline = 'bottom';
+		ctx.fillText(i.toString(), vertex[0], vertex[1] - 10);
+
+		// Draw gradient arrow
+		const gradX = -gradient[i][0]; // Negate for -gradient direction
+		const gradY = -gradient[i][1];
+		const magnitude = Math.sqrt(gradX * gradX + gradY * gradY) || 1e-6; // Avoid division by zero
+		const maxLength = 50; // Max arrow length for normalization
+		const normalizedLength = Math.min(maxLength, magnitude * 10); // Scale factor (tweakable)
+
+		ctx.strokeStyle = 'purple'; // Distinct color for gradient arrows
+		ctx.lineWidth = 1;
+		drawArrow(ctx, vertex[0], vertex[1], gradX / magnitude, gradY / magnitude, normalizedLength);
 	});
 }
 
@@ -82,7 +111,7 @@ function drawMidpoints(ctx, edges, edgeProps) {
 		ctx.fill();
 
 		ctx.fillStyle = 'blue';
-		ctx.fillText(`L ${length.toFixed(6)}`, midpoint[0], midpoint[1] - 15);
+		ctx.fillText(`${i}L ${length.toFixed(6)}`, midpoint[0], midpoint[1] - 15); // Modified line
 		ctx.fillText(`T ${tangent.map((t) => t.toFixed(1))}`, midpoint[0], midpoint[1] - 5);
 		ctx.fillText(`${edge[0]}, ${edge[1]}`, midpoint[0], midpoint[1] + 15);
 

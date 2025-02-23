@@ -20,6 +20,7 @@
 	let graphCtx;
 	let optimizer;
 	let cleanupInteractions;
+	let isOptimizing = false;
 
 	const width = 700;
 	const height = 700;
@@ -53,8 +54,7 @@
 			beta,
 			$kernelData.disjointPairs
 		);
-		kernelData.set({ ...updatedKernel, disjointPairs: $kernelData.disjointPairs });
-
+		$kernelData = { ...updatedKernel, disjointPairs: $kernelData.disjointPairs };
 		$energyChange = $discreteEnergy - $previousEnergy;
 		$previousEnergy = $discreteEnergy;
 
@@ -65,7 +65,10 @@
 			$vertices,
 			$edges,
 			updatedKernel.edgeProps,
-			updatedKernel.kernelMatrix
+			updatedKernel.kernelMatrix,
+			alpha, // Added
+			beta, // Added
+			$kernelData.disjointPairs // Added
 		);
 		drawKernelMatrix(kernelCanvas, updatedKernel.kernelMatrix);
 	}
@@ -99,7 +102,17 @@
 	}
 
 	function startOptimization() {
-		if (optimizer) optimizer.start();
+		if (optimizer && !isOptimizing) {
+			optimizer.start();
+			isOptimizing = true;
+		}
+	}
+
+	function stopOptimization() {
+		if (optimizer && isOptimizing) {
+			optimizer.stop();
+			isOptimizing = false;
+		}
 	}
 
 	function singleStep() {
@@ -119,7 +132,9 @@
 				style="display: flex; flex-direction: column; gap: 10px; position: absolute; top: 10px; left: 10px; z-index: 10;"
 			>
 				<button on:click={regenerateGraph}>Regenerate Graph</button>
-				<button on:click={startOptimization}>Start Optimization</button>
+				<button on:click={isOptimizing ? stopOptimization : startOptimization}>
+					{isOptimizing ? 'Stop Optimization' : 'Start Optimization'}
+				</button>
 				<button on:click={singleStep}>Single Step</button>
 				<div class="energy-value">
 					<p>Discrete Energy: {$discreteEnergy.toFixed(4)}</p>
