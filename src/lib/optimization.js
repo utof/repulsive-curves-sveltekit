@@ -7,11 +7,17 @@ export function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs,
 	const { edgeTangents } = calculateEdgeProperties(vertices, edges);
 	const L2Gradient = calculateL2Gradient(vertices, edges, alpha, beta, disjointPairs);
 	console.log('L2 Gradient:', JSON.stringify(L2Gradient));
-	// Temporarily bypass preconditioner
-	const gradient = L2Gradient; // Use L2Gradient directly
-	console.log('Gradient (using L2 directly):', JSON.stringify(gradient));
+	const sigma = beta / alpha - 1.5;
+	console.log('Sigma:', sigma);
+	const gradient = computePreconditionedGradient(vertices, edges, edgeTangents, sigma, L2Gradient);
+	console.log('Preconditioned Gradient:', JSON.stringify(gradient));
 
 	const newVertices = vertices.map((vertex, i) => {
+		// Fix vertex 0 at its initial position
+		if (i === 0) {
+			console.log(`Vertex[${i}] fixed: [${vertex[0]}, ${vertex[1]}]`);
+			return [vertex[0], vertex[1]];
+		}
 		const gradX = gradient[i][0];
 		const gradY = gradient[i][1];
 		const newX = vertex[0] - stepSize * (isNaN(gradX) ? 0 : gradX);
