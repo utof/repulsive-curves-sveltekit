@@ -1,5 +1,5 @@
 // src/lib/optimization.js
-import { calculateL2Gradient, calculateEdgeProperties } from '$lib/energyCalculations';
+import { calculateDifferential, calculateEdgeProperties } from '$lib/energyCalculations'; // Corrected import
 import { computePreconditionedGradient } from '$lib/innerProduct';
 
 export function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs, stepSize) {
@@ -7,8 +7,9 @@ export function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs,
 	const { edgeTangents } = calculateEdgeProperties(vertices, edges);
 	console.log('Edge tangents:', edgeTangents);
 
-	const L2Gradient = calculateL2Gradient(vertices, edges, alpha, beta, disjointPairs);
-	console.log('L2 Gradient:', JSON.stringify(L2Gradient));
+	// Use the DIFFERENTIAL, not the L2 gradient
+	const differential = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
+	console.log('Differential:', JSON.stringify(differential));
 
 	const gradient = computePreconditionedGradient(
 		vertices,
@@ -16,8 +17,8 @@ export function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs,
 		edgeTangents,
 		alpha,
 		beta,
-		L2Gradient
-	);
+		differential
+	); // Pass differential
 	console.log('Preconditioned Gradient:', JSON.stringify(gradient));
 
 	const newVertices = vertices.map((vertex, i) => {

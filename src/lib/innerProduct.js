@@ -1,88 +1,79 @@
 // src/lib/innerProduct.js
 import * as math from 'mathjs';
-import { calculateEdgeProperties, calculateDisjointEdgePairs } from '$lib/energyCalculations';
+import {
+	calculateEdgeProperties,
+	calculateDisjointEdgePairs,
+	tangentPointKernel
+} from '$lib/energyCalculations';
 
-function calculateLowOrderTerm(vertices, edges, edgeTangents, sigma) {
-	console.log('Starting calculateLowOrderTerm with sigma:', sigma);
-	const { edgeLengths } = calculateEdgeProperties(vertices, edges);
+function calculateLowOrderTerm(vertices, edges, sigma, alpha = 2, beta = 4) {
+	alpha = 2;
+	beta = 4; // hardcode it for now, as per paper.
 	const numVertices = vertices.length;
 	const B0 = math.zeros(numVertices, numVertices);
-	const kappa = 2 * sigma + 1;
-	console.log('kappa for B0:', kappa);
+	const { edgeLengths, edgeTangents } = calculateEdgeProperties(vertices, edges);
+	const disjointEdges = calculateDisjointEdgePairs(edges); // Use your existing function
 
 	for (let I = 0; I < edges.length; I++) {
-		const i1 = edges[I][0],
-			i2 = edges[I][1];
-		const l_I = edgeLengths[I];
-		const T_I = edgeTangents[I];
-		console.log(`B0 Edge ${I}: [${i1}, ${i2}], length: ${l_I}, tangent: [${T_I}]`);
-
-		for (let J = 0; J < edges.length; J++) {
-			if (I === J || edges[I][0] === edges[J][0] || edges[I][1] === edges[J][1]) continue;
-			const j1 = edges[J][0],
-				j2 = edges[J][1];
+		for (const J of disjointEdges[I]) {
+			// Iterate directly over disjoint edges of I
+			const [i1, i2] = edges[I];
+			const [j1, j2] = edges[J];
+			const l_I = edgeLengths[I];
 			const l_J = edgeLengths[J];
-			let w_IJ = 0;
+			const T_I = edgeTangents[I];
+
+			let w_IJ_0 = 0;
 			const pairs = [
 				[i1, j1],
 				[i1, j2],
 				[i2, j1],
 				[i2, j2]
 			];
-			console.log(`  Pair with Edge ${J}: [${j1}, ${j2}]`);
-
 			for (const [i, j] of pairs) {
 				const diff = math.subtract(vertices[i], vertices[j]);
-				const dist = math.norm(diff) + 1e-6;
-				const cross = T_I[0] * diff[1] - T_I[1] * diff[0];
-				const contrib = Math.pow(Math.abs(cross), 2) / Math.pow(dist, kappa);
-				w_IJ += contrib;
-				console.log(`    Pair [${i}, ${j}]: dist=${dist}, cross=${cross}, contrib=${contrib}`);
+				const dist = math.norm(diff) + 1e-8;
+				const kernel = tangentPointKernel(vertices[i], vertices[j], T_I, alpha, beta); // Use your kernel function
+				w_IJ_0 += kernel / Math.pow(dist, 2 * sigma + 1 - beta); // Correct denominator
 			}
-			w_IJ *= (l_I * l_J) / 4;
-			console.log(`  w_IJ for ${I}-${J}: ${w_IJ}`);
+			w_IJ_0 *= (l_I * l_J) / 4;
 
-			B0.set([i1, i1], B0.get([i1, i1]) + w_IJ);
-			B0.set([i2, i2], B0.get([i2, i2]) + w_IJ);
-			B0.set([i1, i2], B0.get([i1, i2]) - w_IJ);
-			B0.set([i2, i1], B0.get([i2, i1]) - w_IJ);
+			// Apply the increments
+			for (let a = 0; a < 2; a++) {
+				for (let b = 0; b < 2; b++) {
+					const i_a = edges[I][a];
+					const i_b = edges[I][b];
+					const j_a = edges[J][a];
+					const j_b = edges[J][b];
+
+					B0.set([i_a, i_b], B0.get([i_a, i_b]) + 0.25 * w_IJ_0);
+					B0.set([j_a, j_b], B0.get([j_a, j_b]) + 0.25 * w_IJ_0);
+					B0.set([i_a, j_b], B0.get([i_a, j_b]) - 0.25 * w_IJ_0);
+					B0.set([j_a, i_b], B0.get([j_a, i_b]) - 0.25 * w_IJ_0);
+				}
+			}
 		}
 	}
-	console.log('B0 Matrix:', B0.toArray());
+
 	return B0;
 }
 
-function calculateHighOrderTerm(vertices, edges, edgeTangents, sigma) {
-	console.log('Starting calculateHighOrderTerm with sigma:', sigma);
-	const { edgeLengths } = calculateEdgeProperties(vertices, edges);
+function calculateHighOrderTerm(vertices, edges, sigma) {
 	const numVertices = vertices.length;
 	const B = math.zeros(numVertices, numVertices);
-	const kappa = 2 * sigma + 1;
-	console.log('kappa for B:', kappa);
+	const { edgeLengths, edgeTangents } = calculateEdgeProperties(vertices, edges);
+	const disjointEdges = calculateDisjointEdgePairs(edges); // Use your existing function
 
 	for (let I = 0; I < edges.length; I++) {
-		const i1 = edges[I][0],
-			i2 = edges[I][1];
-		const l_I = edgeLengths[I];
-		const T_I = edgeTangents[I];
-		console.log(`B Edge ${I}: [${i1}, ${i2}], length: ${l_I}, tangent: [${T_I}]`);
-
-		for (let J = 0; J < edges.length; J++) {
-			// Skip if edges are the same or share vertices
-			if (
-				I === J ||
-				edges[I][0] === edges[J][0] ||
-				edges[I][0] === edges[J][1] ||
-				edges[I][1] === edges[J][0] ||
-				edges[I][1] === edges[J][1]
-			) {
-				console.log(`  Skipping Edge ${J}: [${edges[J][0]}, ${edges[J][1]}] (not disjoint)`);
-				continue;
-			}
-			const j1 = edges[J][0],
-				j2 = edges[J][1];
+		for (const J of disjointEdges[I]) {
+			// Iterate directly over disjoint edges of I
+			const [i1, i2] = edges[I];
+			const [j1, j2] = edges[J];
+			const l_I = edgeLengths[I];
 			const l_J = edgeLengths[J];
+			const T_I = edgeTangents[I];
 			const T_J = edgeTangents[J];
+
 			let w_IJ = 0;
 			const pairs = [
 				[i1, j1],
@@ -90,35 +81,33 @@ function calculateHighOrderTerm(vertices, edges, edgeTangents, sigma) {
 				[i2, j1],
 				[i2, j2]
 			];
-			console.log(`  Pair with Edge ${J}: [${j1}, ${j2}]`);
-
 			for (const [i, j] of pairs) {
 				const diff = math.subtract(vertices[i], vertices[j]);
-				const dist = math.norm(diff) + 1e-6;
-				w_IJ += 1 / Math.pow(dist, kappa);
-				console.log(
-					`    Pair [${i}, ${j}]: dist=${dist}, w_IJ contrib=${1 / Math.pow(dist, kappa)}`
-				);
+				const dist = math.norm(diff) + 1e-8; // Add small epsilon for numerical stability
+				w_IJ += 1 / Math.pow(dist, 2 * sigma + 1);
 			}
 			w_IJ *= (l_I * l_J) / 4;
-			const dotTT = math.dot(T_I, T_J);
-			console.log(`  w_IJ for ${I}-${J}: ${w_IJ}, dot(T_I, T_J): ${dotTT}`);
 
-			B.set([i1, i1], B.get([i1, i1]) + w_IJ / (l_I * l_I));
-			B.set([i2, i2], B.get([i2, i2]) + w_IJ / (l_I * l_I));
-			B.set([i1, i2], B.get([i1, i2]) - w_IJ / (l_I * l_I));
-			B.set([i2, i1], B.get([i2, i1]) - w_IJ / (l_I * l_I));
-			B.set([j1, j1], B.get([j1, j1]) + w_IJ / (l_J * l_J));
-			B.set([j2, j2], B.get([j2, j2]) + w_IJ / (l_J * l_J));
-			B.set([j1, j2], B.get([j1, j2]) - w_IJ / (l_J * l_J));
-			B.set([j2, j1], B.get([j2, j1]) - w_IJ / (l_J * l_J));
-			B.set([i1, j1], B.get([i1, j1]) - (w_IJ * dotTT) / (l_I * l_J));
-			B.set([i1, j2], B.get([i1, j2]) + (w_IJ * dotTT) / (l_I * l_J));
-			B.set([i2, j1], B.get([i2, j1]) + (w_IJ * dotTT) / (l_I * l_J));
-			B.set([i2, j2], B.get([i2, j2]) - (w_IJ * dotTT) / (l_I * l_J));
+			const dot_TI_TJ = math.dot(T_I, T_J);
+
+			// Apply the increments as described in the paper
+			for (let a = 0; a < 2; a++) {
+				for (let b = 0; b < 2; b++) {
+					const sign = Math.pow(-1, a + b);
+					const i_a = edges[I][a];
+					const i_b = edges[I][b];
+					const j_a = edges[J][a];
+					const j_b = edges[J][b];
+
+					B.set([i_a, i_b], B.get([i_a, i_b]) + (sign * w_IJ) / (l_I * l_I));
+					B.set([j_a, j_b], B.get([j_a, j_b]) + (sign * w_IJ) / (l_J * l_J));
+					B.set([i_a, j_b], B.get([i_a, j_b]) - (sign * w_IJ * dot_TI_TJ) / (l_I * l_J));
+					B.set([j_a, i_b], B.get([j_a, i_b]) - (sign * w_IJ * dot_TI_TJ) / (l_I * l_J));
+				}
+			}
 		}
 	}
-	console.log('B Matrix:', B.toArray());
+
 	return B;
 }
 
@@ -128,7 +117,7 @@ export function calculateDiscreteInnerProduct(vertices, edges, edgeTangents, alp
 	const sigma = s - 1;
 	console.log('Computed s:', s, 'Sigma (s - 1):', sigma);
 
-	const B0 = calculateLowOrderTerm(vertices, edges, edgeTangents, sigma);
+	const B0 = calculateLowOrderTerm(vertices, edges, edgeTangents, sigma, alpha, beta); // Pass alpha and beta
 	const B = calculateHighOrderTerm(vertices, edges, edgeTangents, sigma);
 	let A = math.add(B0, B);
 	console.log('Initial A Matrix (B0 + B):', A.toArray());
@@ -143,20 +132,38 @@ export function calculateDiscreteInnerProduct(vertices, edges, edgeTangents, alp
 
 	// Add regularization
 	const reg = math.multiply(1e-6, math.identity(numVertices));
-	A = math.add(A, reg);
-	console.log('A Matrix with regularization:', A.toArray());
+	const A_reg = math.add(A, reg);
+	console.log('A Matrix with regularization:', A_reg.toArray());
 
 	try {
-		const eigenvalues = math.eigs(A).values.toArray();
-		console.log('Eigenvalues of A:', eigenvalues);
+		const eigenvalues = math.eigs(A_reg).values.toArray();
+		console.log('Eigenvalues of A_reg:', eigenvalues);
 		const minEigen = Math.min(...eigenvalues);
 		console.log('Minimum eigenvalue:', minEigen);
-		if (minEigen <= 0) console.warn('A is not positive definite!');
+		if (minEigen <= 0) console.warn('A_reg is not positive definite!');
 	} catch (e) {
 		console.error('Eigenvalue computation failed:', e);
 	}
 
-	return { A, B0, B };
+	return { A_reg, B0, B };
+}
+
+export function build_A_bar_2D(vertices, edges, sigma) {
+	const B = calculateHighOrderTerm(vertices, edges, sigma);
+	const B0 = calculateLowOrderTerm(vertices, edges, sigma);
+	const A = math.add(B, B0);
+
+	const numVertices = vertices.length;
+	const A_bar = math.zeros(2 * numVertices, 2 * numVertices); // 2D, so 2 * numVertices
+
+	// Block-diagonal construction (only two blocks for 2D)
+	A_bar.subset(math.index(math.range(0, numVertices), math.range(0, numVertices)), A);
+	A_bar.subset(
+		math.index(math.range(numVertices, 2 * numVertices), math.range(numVertices, 2 * numVertices)),
+		A
+	);
+
+	return A_bar;
 }
 
 export function computePreconditionedGradient(
@@ -165,10 +172,10 @@ export function computePreconditionedGradient(
 	edgeTangents,
 	alpha,
 	beta,
-	L2Gradient
+	differential
 ) {
-	console.log('Computing preconditioned gradient with L2Gradient:', L2Gradient);
-	const { A, B0, B } = calculateDiscreteInnerProduct(vertices, edges, edgeTangents, alpha, beta);
+	console.log('Computing preconditioned gradient with differential:', differential);
+	const { A } = calculateDiscreteInnerProduct(vertices, edges, edgeTangents, alpha, beta);
 	const numVertices = vertices.length;
 	const AFull = math.zeros(numVertices * 2, numVertices * 2);
 
@@ -182,18 +189,18 @@ export function computePreconditionedGradient(
 	}
 	console.log('AFull Matrix:', AFull.toArray());
 
-	const gradientFlat = L2Gradient.flat();
-	const negGradientFlat = math.multiply(-1, gradientFlat);
-	console.log('Flattened negative L2 gradient:', negGradientFlat);
+	// Flatten the differential
+	const differentialFlat = differential.flat();
 
 	let gradFlatFull;
 	try {
-		gradFlatFull = math.multiply(math.inv(AFull), negGradientFlat);
+		// Solve the system A * g = dE  (Equation 20)
+		gradFlatFull = math.multiply(math.inv(AFull), differentialFlat);
 		console.log('Preconditioned gradient (flat) as matrix:', gradFlatFull.toArray());
 	} catch (e) {
 		console.error('Inversion failed:', e);
-		console.log('Falling back to L2 gradient');
-		gradFlatFull = math.matrix(negGradientFlat);
+		// Fallback (though ideally we should never reach here)
+		gradFlatFull = math.matrix(differentialFlat);
 	}
 
 	const gradArray = gradFlatFull.toArray();
