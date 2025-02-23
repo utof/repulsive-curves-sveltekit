@@ -19,8 +19,8 @@
 	const height = 700;
 	const alpha = 3;
 	const beta = 6;
-	const stepSize = 0.01;
-	const maxIterations = 100;
+	const stepSize = 1000;
+	const maxIterations = 1000;
 	let optimizer = null;
 	let cleanupInteractions;
 

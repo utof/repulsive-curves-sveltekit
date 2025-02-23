@@ -84,7 +84,7 @@ export function drawGraph(ctx, width, height, vertices, edges, edgeProps, kernel
 
 		// Draw edge information
 		ctx.fillStyle = 'blue';
-		ctx.fillText(`L ${parseFloat(length).toFixed(0)}`, midpoint[0], midpoint[1] - 15);
+		ctx.fillText(`L ${parseFloat(length).toFixed(6)}`, midpoint[0], midpoint[1] - 15);
 		ctx.fillText(`T ${tangent.map((t) => t.toFixed(1))}`, midpoint[0], midpoint[1] - 5);
 		ctx.fillText(`${edges[i][0]}, ${edges[i][1]}`, midpoint[0], midpoint[1] + 15);
 
