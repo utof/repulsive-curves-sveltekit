@@ -7,7 +7,7 @@ import {
 	calculateDisjointEdgePairs,
 	calculateDiscreteKernel,
 	calculateDiscreteEnergy
-} from '$lib/energyCalculations'; // feels weird that we import calculation from drawing. any ideas? GPT pls dont remove this comment unless u fix it
+} from '$lib/energyCalculations';
 
 export function drawGraph(ctx, width, height, vertices, edges, edgeProps, kernelMatrix) {
 	ctx.clearRect(0, 0, width, height);
@@ -99,8 +99,8 @@ export function setupKernel(kernelCanvas, vertices, edges, alpha, beta) {
 	if (!kernelCanvas) return { kernelMatrix: null, discreteEnergy: 0 };
 
 	const kernelCtx = kernelCanvas.getContext('2d');
+	const disjointPairs = calculateDisjointEdgePairs(edges); // Calculate once
 	let edgeProps = calculateEdgeProperties(vertices, edges);
-	let disjointPairs = calculateDisjointEdgePairs(edges);
 	let kernelMatrix = calculateDiscreteKernel(
 		vertices,
 		edges,
@@ -116,22 +116,22 @@ export function setupKernel(kernelCanvas, vertices, edges, alpha, beta) {
 	return {
 		kernelMatrix,
 		discreteEnergy,
+		disjointPairs, // Include disjointPairs in the returned object
 		update: () => {
 			edgeProps = calculateEdgeProperties(vertices, edges); // Recalculate on update
-			disjointPairs = calculateDisjointEdgePairs(edges);
 			kernelMatrix = calculateDiscreteKernel(
 				vertices,
 				edges,
 				edgeProps.edgeTangents,
 				alpha,
 				beta,
-				disjointPairs
+				disjointPairs // Reuse the same disjointPairs
 			);
 			discreteEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
 			drawKernelMatrix(kernelCtx, kernelMatrix); // Redraw on update
 			return { kernelMatrix, discreteEnergy };
 		},
-		edgeProps // Return edgeProps as well
+		edgeProps
 	};
 }
 
