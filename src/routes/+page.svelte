@@ -1,4 +1,3 @@
-<!-- src/routes/+page.svelte -->
 <script>
 	import { onMount, onDestroy } from 'svelte';
 	import { drawGraph, drawKernelMatrix } from '$lib/graphDrawing';
@@ -19,31 +18,24 @@
 	let kernelCanvas;
 	let graphCtx;
 	let optimizer;
-	let cleanupInteractions;
+	let cleanupInteractions = () => {}; // Initialize as no-op
 	let isOptimizing = false;
 
 	const width = 700;
 	const height = 700;
 	const alpha = 3;
 	const beta = 6;
-	const stepSize = 1000;
+	const stepSize = 5000;
 	const maxIterations = 1000;
 
 	onMount(() => {
 		graphCtx = graphCanvas.getContext('2d');
 		regenerateGraph();
-		cleanupInteractions = setupInteractions(
-			graphCanvas,
-			$vertices,
-			updateVisualization,
-			width,
-			height
-		);
 	});
 
 	onDestroy(() => {
 		if (optimizer) optimizer.stop();
-		if (cleanupInteractions) cleanupInteractions();
+		cleanupInteractions();
 	});
 
 	function updateVisualization() {
@@ -66,9 +58,9 @@
 			$edges,
 			updatedKernel.edgeProps,
 			updatedKernel.kernelMatrix,
-			alpha, // Added
-			beta, // Added
-			$kernelData.disjointPairs // Added
+			alpha,
+			beta,
+			$kernelData.disjointPairs
 		);
 		drawKernelMatrix(kernelCanvas, updatedKernel.kernelMatrix);
 	}
@@ -96,6 +88,16 @@
 			height,
 			maxIterations,
 			updateVisualization
+		);
+
+		// Clean up old interactions and set up new ones
+		cleanupInteractions();
+		cleanupInteractions = setupInteractions(
+			graphCanvas,
+			$vertices,
+			updateVisualization,
+			width,
+			height
 		);
 
 		updateVisualization();

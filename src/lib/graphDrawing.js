@@ -80,11 +80,12 @@ function drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs) {
 		const gradX = -gradient[i][0]; // Negate for -gradient direction
 		const gradY = -gradient[i][1];
 		const magnitude = Math.sqrt(gradX * gradX + gradY * gradY) || 1e-6; // Avoid division by zero
+		const minLength = 20; // Min arrow length for normalization
 		const maxLength = 50; // Max arrow length for normalization
-		const normalizedLength = Math.min(maxLength, magnitude * 10); // Scale factor (tweakable)
+		const normalizedLength = Math.max(minLength, Math.min(maxLength, magnitude * 1000)); // Scale factor (tweakable)
 
 		ctx.strokeStyle = 'purple'; // Distinct color for gradient arrows
-		ctx.lineWidth = 1;
+		ctx.lineWidth = 2;
 		drawArrow(ctx, vertex[0], vertex[1], gradX / magnitude, gradY / magnitude, normalizedLength);
 	});
 }
