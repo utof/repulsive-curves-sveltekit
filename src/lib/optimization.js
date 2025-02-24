@@ -10,14 +10,14 @@ import { get } from 'svelte/store';
 import { config } from '$lib/stores';
 
 // Configuration toggles
-const usePreconditioned = 1; // 0 for L2, 1 for Preconditioned
-const applyProjectConstraints = false; // Comment out to disable projectConstraints
-const applyBarycenter = true;         // Comment out to disable enforceBarycenter
+const usePreconditioned = 0; // 0 for L2, 1 for Preconditioned
+const applyProjectConstraints = false; // IMPORTANT: smaller values (*0.001) of correction for precond. compared to L1 (*0.1) otherwise linesearch fail.
+const applyBarycenter = false;         // Comment out to disable enforceBarycenter
 
 function l2GradientDescentStep(vertices, edges, alpha, beta, disjointPairs, initialEdgeLengths) {
     const differential = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
     const gradient = differential.map(([dx, dy]) => [dx, dy]);
-    const stepSize = 1000;
+    const stepSize = 100000;
     const newVertices = vertices.map((vertex, i) => [
         vertex[0] - stepSize * gradient[i][0],
         vertex[1] - stepSize * gradient[i][1]
@@ -89,30 +89,28 @@ function preconditionedGradientDescentStep(
     return vertices;
 }
 
-function projectConstraints(
-    vertices,
-    edges,
-    initialEdgeLengths,
-    maxIterations = get(config).maxLineSearch,
-    tolerance = get(config).constraintTolerance
-) {
+function projectConstraints(vertices, edges, initialEdgeLengths) {
+    const maxIterations = Math.min(get(config).maxLineSearch, 5); // Limit iterations
+    const tolerance = get(config).constraintTolerance * 10; // Relax tolerance
+
     for (let iter = 0; iter < maxIterations; iter++) {
         let maxError = 0;
-        for (let I = 0; I < edges.length; I++) {
-            const [i, j] = edges[I];
-            const vi = vertices[i];
-            const vj = vertices[j];
-            const d = [vj[0] - vi[0], vj[1] - vi[1]];
-            const currentLength = Math.sqrt(d[0] * d[0] + d[1] * d[1]);
-            const targetLength = initialEdgeLengths[I];
+        for (let i = 0; i < edges.length; i++) {
+            const [v0, v1] = edges[i];
+            const dx = vertices[v1][0] - vertices[v0][0];
+            const dy = vertices[v1][1] - vertices[v0][1];
+            const currentLength = Math.sqrt(dx * dx + dy * dy);
+            const targetLength = initialEdgeLengths[i];
             const error = currentLength - targetLength;
+
             if (Math.abs(error) > tolerance) {
-                const correction = (error / currentLength) * 0.5;
-                const delta = [d[0] * correction, d[1] * correction];
-                vertices[i][0] += delta[0];
-                vertices[i][1] += delta[1];
-                vertices[j][0] -= delta[0];
-                vertices[j][1] -= delta[1];
+                const correction = error / (currentLength || 1) * 0.001; // Reduced correction factor
+                const deltaX = dx * correction;
+                const deltaY = dy * correction;
+                vertices[v0][0] += deltaX;
+                vertices[v0][1] += deltaY;
+                vertices[v1][0] -= deltaX;
+                vertices[v1][1] -= deltaY;
                 maxError = Math.max(maxError, Math.abs(error));
             }
         }
