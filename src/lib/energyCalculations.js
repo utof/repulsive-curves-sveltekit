@@ -181,64 +181,30 @@ export function calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPa
 
 // Function to calculate the differential (not the L2 gradient)
 export function calculateDifferential(vertices, edges, alpha, beta, disjointPairs) {
+	const h = 1e-4;
 	const numVertices = vertices.length;
 	const differential = [];
 
+	// Compute baseline energy
+	const E_original = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+
 	for (let i = 0; i < numVertices; i++) {
-		differential[i] = [0, 0]; // Initialize for x and y components
-	}
-
-	const { edgeLengths, edgeTangents } = calculateEdgeProperties(vertices, edges);
-
-	for (let I = 0; I < edges.length; I++) {
-		for (const J of disjointPairs[I]) {
-			const combinations = [
-				[vertices[edges[I][0]], vertices[edges[J][0]]],
-				[vertices[edges[I][0]], vertices[edges[J][1]]],
-				[vertices[edges[I][1]], vertices[edges[J][0]]],
-				[vertices[edges[I][1]], vertices[edges[J][1]]]
-			];
-
-			for (let k = 0; k < combinations.length; k++) {
-				const [p, q] = combinations[k];
-				const T = edgeTangents[I];
-
-				// Compute partial derivatives of the kernel
-				const h = 1e-6;
-				const kernelValue = tangentPointKernel(p, q, T, alpha, beta);
-
-				// Partial derivatives with respect to p_x, p_y, q_x, q_y
-				const dp_x = (tangentPointKernel([p[0] + h, p[1]], q, T, alpha, beta) - kernelValue) / h;
-				const dp_y = (tangentPointKernel([p[0], p[1] + h], q, T, alpha, beta) - kernelValue) / h;
-				const dq_x = (tangentPointKernel(p, [q[0] + h, q[1]], T, alpha, beta) - kernelValue) / h;
-				const dq_y = (tangentPointKernel(p, [q[0], q[1] + h], T, alpha, beta) - kernelValue) / h;
-
-				// Determine which vertices these partials correspond to
-				let p_vertexIndex, q_vertexIndex;
-				if (k < 2) {
-					// p is from edge I's first vertex
-					p_vertexIndex = edges[I][0];
-				} else {
-					// p is from edge I's second vertex
-					p_vertexIndex = edges[I][1];
-				}
-				if (k % 2 === 0) {
-					// q is from edge J's first vertex
-					q_vertexIndex = edges[J][0];
-				} else {
-					// q is from edge J's second vertex
-					q_vertexIndex = edges[J][1];
-				}
-
-				// Accumulate the contributions (scaled by edge lengths)
-				differential[p_vertexIndex][0] += (dp_x * edgeLengths[I] * edgeLengths[J]) / 4;
-				differential[p_vertexIndex][1] += (dp_y * edgeLengths[I] * edgeLengths[J]) / 4;
-				differential[q_vertexIndex][0] += (dq_x * edgeLengths[I] * edgeLengths[J]) / 4;
-				differential[q_vertexIndex][1] += (dq_y * edgeLengths[I] * edgeLengths[J]) / 4;
-			}
+		differential[i] = [0, 0];
+		for (let dim = 0; dim < 2; dim++) {
+			// Create a deep copy of vertices to perturb
+			const vertices_perturbed = vertices.map((v) => [...v]);
+			vertices_perturbed[i][dim] += h;
+			const E_perturbed = calculateDiscreteEnergy(
+				vertices_perturbed,
+				edges,
+				alpha,
+				beta,
+				disjointPairs
+			);
+			differential[i][dim] = (E_perturbed - E_original) / h;
 		}
 	}
-
+	console.log('Computed differential:', differential);
 	return differential;
 }
 // for later use.

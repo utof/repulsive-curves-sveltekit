@@ -25,7 +25,7 @@
 	const height = 700;
 	const alpha = 3;
 	const beta = 6;
-	const stepSize = 1000;
+	const stepSize = 100000;
 	// const stepSize = 100;
 	const maxIterations = 1000;
 
@@ -77,14 +77,13 @@
 		$kernelData = initialKernel;
 		$previousEnergy = initialKernel.discreteEnergy;
 
-		if (optimizer) optimizer.stop();
+		// if (optimizer) optimizer.stop();
 		optimizer = createOptimizer(
 			$vertices,
 			$edges,
 			alpha,
 			beta,
 			initialKernel.disjointPairs,
-			stepSize,
 			maxIterations,
 			updateVisualization
 		);

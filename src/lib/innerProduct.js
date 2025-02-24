@@ -178,35 +178,15 @@ export function calculateDiscreteInnerProduct(vertices, edges, alpha, beta) {
 
 	let A = math.add(B0, B);
 	console.log('Initial A Matrix (B0 + B):', A.toArray());
-
-	// Enforce constraint: vertex 0 is fixed
-	const numVertices = vertices.length;
-	for (let j = 0; j < numVertices; j++) {
-		A.set([0, j], j === 0 ? 1 : 0);
-		A.set([j, 0], j === 0 ? 1 : 0);
-	}
-	console.log('A Matrix after fixing vertex 0:', A.toArray());
-
-	// regularization in the future DO NOT DELETE COMMENTS BELOW
-	// const reg = math.multiply(1e-6, math.identity(numVertices));
-	// const A_reg = math.add(A, reg);
-	// console.log('A Matrix with regularization:', A_reg.toArray());
 	const A_reg = A;
 
 	return { A_reg, B0, B };
 }
 
-/**
- * Builds the 2D block-diagonal matrix A_bar.
- * @param {number} alpha - Energy parameter.
- * @param {number} beta - Energy parameter.
- * @param {Array<Array<number>>} vertices - Array of vertex coordinates.
- * @param {Array<Array<number>>} edges - Array of edges.
- * @returns {{A_bar: math.Matrix, B: math.Matrix, B0: math.Matrix}} - The block-diagonal matrix A_bar and component matrices B and B0.
- */
 export function build_A_bar_2D(alpha, beta, vertices, edges) {
 	const { edgeLengths, edgeTangents } = calculateEdgeProperties(vertices, edges);
 	const disjointEdges = calculateDisjointEdgePairs(edges);
+	const numVertices = vertices.length;
 
 	const { W, W0 } = build_weights(
 		alpha,
@@ -219,12 +199,14 @@ export function build_A_bar_2D(alpha, beta, vertices, edges) {
 	);
 	const B = calculateHighOrderTerm(vertices, edges, W, edgeLengths, edgeTangents);
 	const B0 = calculateLowOrderTerm(vertices, edges, W0);
-	const A = math.add(B, B0);
+	let A = math.add(B, B0);
 
-	const numVertices = vertices.length;
-	const A_bar = math.zeros(2 * numVertices, 2 * numVertices); // 2D, so 2 * numVertices
+	// Regularization to ensure invertibility
+	const reg = math.multiply(1e-4, math.identity(numVertices));
+	A = math.add(A, reg);
 
-	// Block-diagonal construction (only two blocks for 2D)
+	// Build 2D block-diagonal A_bar
+	const A_bar = math.zeros(2 * numVertices, 2 * numVertices);
 	A_bar.subset(math.index(math.range(0, numVertices), math.range(0, numVertices)), A);
 	A_bar.subset(
 		math.index(math.range(numVertices, 2 * numVertices), math.range(numVertices, 2 * numVertices)),
@@ -244,39 +226,23 @@ export function computePreconditionedGradient(
 ) {
 	console.log('Computing preconditioned gradient with differential:', differential);
 	const numVertices = vertices.length;
-	const AFull = math.zeros(numVertices * 2, numVertices * 2);
 	const { A_bar } = build_A_bar_2D(alpha, beta, vertices, edges);
-	const A = A_bar;
-
-	console.log('Constructing AFull...');
-	for (let i = 0; i < numVertices; i++) {
-		for (let j = 0; j < numVertices; j++) {
-			const val = A.get([i, j]);
-			AFull.set([i * 2, j * 2], val);
-			AFull.set([i * 2 + 1, j * 2 + 1], val);
-		}
-	}
-	console.log('AFull Matrix:', AFull.toArray());
-
-	// Flatten the differential
 	const differentialFlat = differential.flat();
 
-	let gradFlatFull;
+	let gradFlat;
 	try {
-		// Solve the system A * g = dE  (Equation 20)
-		gradFlatFull = math.multiply(math.inv(AFull), differentialFlat);
-		console.log('Preconditioned gradient (flat) as matrix:', gradFlatFull.toArray());
+		gradFlat = math.lusolve(A_bar, differentialFlat);
+		console.log('Preconditioned gradient (flat):', gradFlat.toArray());
 	} catch (e) {
-		console.error('Inversion failed:', e);
-		// Fallback (though ideally we should never reach here)
-		gradFlatFull = math.matrix(differentialFlat);
+		console.error('Linear solve failed:', e);
+		throw new Error('Failed to compute preconditioned gradient due to singular matrix');
 	}
 
-	const gradArray = gradFlatFull.toArray();
+	const gradArray = gradFlat.toArray();
 	const grad = [];
 	for (let i = 0; i < numVertices; i++) {
 		grad[i] = [gradArray[i * 2], gradArray[i * 2 + 1]];
-		console.log(`Gradient for vertex ${i}: [${grad[i][0]}, ${grad[i][1]}]`);
 	}
+	console.log('Gradient:', grad);
 	return grad;
 }
