@@ -6,13 +6,15 @@ import {
 } from '$lib/energyCalculations';
 import { computePreconditionedGradient } from '$lib/innerProduct';
 import * as math from 'mathjs';
+import { get } from 'svelte/store';
+import { config } from '$lib/stores';
 
 function projectConstraints(
 	vertices,
 	edges,
 	initialEdgeLengths,
-	maxIterations = 10,
-	tolerance = 1e-7
+	maxIterations = get(config).maxLineSearch,
+	tolerance = get(config).constraintTolerance
 ) {
 	for (let iter = 0; iter < maxIterations; iter++) {
 		let maxError = 0;
@@ -38,6 +40,24 @@ function projectConstraints(
 	}
 }
 
+function enforceBarycenter(vertices, edges, edgeLengths) {
+	const totalLength = edgeLengths.reduce((sum, l) => sum + l, 0);
+	let barycenter = [0, 0];
+	for (let i = 0; i < edges.length; i++) {
+		const [v0, v1] = edges[i];
+		const midpoint = [
+			(vertices[v0][0] + vertices[v1][0]) / 2,
+			(vertices[v0][1] + vertices[v1][1]) / 2
+		];
+		barycenter[0] += (edgeLengths[i] / totalLength) * midpoint[0];
+		barycenter[1] += (edgeLengths[i] / totalLength) * midpoint[1];
+	}
+	vertices.forEach((v) => {
+		v[0] -= barycenter[0];
+		v[1] -= barycenter[1];
+	});
+}
+
 export function gradientDescentStep(
 	vertices,
 	edges,
@@ -45,9 +65,9 @@ export function gradientDescentStep(
 	beta,
 	disjointPairs,
 	initialEdgeLengths,
-	a_const = 0.1,
-	b_const = 0.5,
-	max_line_search = 20
+	a_const = get(config).aConst,
+	b_const = get(config).bConst,
+	max_line_search = get(config).maxLineSearch
 ) {
 	console.log('Gradient Descent Step - Initial vertices:', JSON.stringify(vertices));
 	const { edgeTangents } = calculateEdgeProperties(vertices, edges);
@@ -62,8 +82,7 @@ export function gradientDescentStep(
 		differential
 	);
 
-	// Allow all vertices to move (remove fixed vertex)
-	const d = gradient.map(([gx, gy]) => [-gx, -gy]);
+	const d = gradient.map(([gx, gy]) => [-gx, -gy]); // Negative gradient for descent
 	const d_norm = Math.sqrt(d.flat().reduce((sum, val) => sum + val * val, 0)) || 1;
 	const d_normalized = d.map(([dx, dy]) => [dx / d_norm, dy / d_norm]);
 
@@ -73,15 +92,16 @@ export function gradientDescentStep(
 
 	const E_old = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
 
-	let t = 1.0;
+	let t = get(config).tauInitial;
 	for (let i = 0; i < max_line_search; i++) {
 		const vertices_new = vertices.map((vertex, idx) => [
 			vertex[0] + t * d_normalized[idx][0],
 			vertex[1] + t * d_normalized[idx][1]
 		]);
 
-		// Project onto edge length constraints
+		// Project onto edge length and barycenter constraints
 		// projectConstraints(vertices_new, edges, initialEdgeLengths);
+		enforceBarycenter(vertices_new, edges, initialEdgeLengths);
 
 		const E_new = calculateDiscreteEnergy(vertices_new, edges, alpha, beta, disjointPairs);
 		if (E_new <= E_old + a_const * t * slope) {

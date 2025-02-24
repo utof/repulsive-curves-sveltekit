@@ -5,6 +5,8 @@ import {
 	calculateDisjointEdgePairs,
 	tangentPointKernel
 } from '$lib/energyCalculations';
+import { get } from 'svelte/store';
+import { config } from '$lib/stores';
 
 /**
  * Builds the weight matrices W and W0 used in energy calculations.
@@ -19,7 +21,8 @@ import {
  */
 function build_weights(alpha, beta, edges, disjointPairs, vertices, edgeTangents, edgeLengths) {
 	const edge_num = edges.length;
-	const sigma = (beta - 1) / alpha - 1;
+	const s = (beta - 1) / alpha; // Fractional order s from the paper
+	const sigma = s - 1; // Correct sigma = s - 1 (Section 4.2.2)
 
 	const W = math.zeros(edge_num, edge_num);
 	const W0 = math.zeros(edge_num, edge_num);
@@ -36,10 +39,8 @@ function build_weights(alpha, beta, edges, disjointPairs, vertices, edgeTangents
 					const p = vertices[i];
 					const q = vertices[j];
 					const diff = math.subtract(p, q);
-					let diff_norm = math.norm(diff);
-
-					// Handle near-zero distances
-					diff_norm = Math.max(diff_norm, 1e-8);
+					const epsilon = get(config).epsilonStability; // Use config epsilon
+					let diff_norm = math.norm(diff) + epsilon; // Prevent division by zero
 
 					const term1 = 1 / Math.pow(diff_norm, 2 * sigma + 1);
 					elt1 += term1;
@@ -48,8 +49,8 @@ function build_weights(alpha, beta, edges, disjointPairs, vertices, edgeTangents
 					const alph = 2;
 					const bet = 4;
 
-					const cross = math.det([diff, edgeTangents[I]]);
-					const cross_norm = math.norm(cross);
+					const cross = math.det([diff, edgeTangents[I]]); // 2D cross product
+					const cross_norm = Math.abs(cross); // Use absolute value for 2D
 
 					const k_numerator = Math.pow(cross_norm, alph);
 					const k_denominator = Math.pow(diff_norm, bet);
@@ -125,7 +126,7 @@ function calculateHighOrderTerm(vertices, edges, W, edgeLengths, edgeTangents) {
 			const T_I = edgeTangents[I];
 			const T_J = edgeTangents[J];
 			const w_IJ = W.get([I, J]);
-			const dot_TI_TJ = math.dot(T_I, T_J);
+			const dot_TI_TJ = math.dot(T_I, T_J); // 2D dot product
 
 			for (let a = 0; a < 2; a++) {
 				for (let b = 0; b < 2; b++) {
@@ -201,8 +202,9 @@ export function build_A_bar_2D(alpha, beta, vertices, edges) {
 	const B0 = calculateLowOrderTerm(vertices, edges, W0);
 	let A = math.add(B, B0);
 
-	// Regularization to ensure invertibility
-	const reg = math.multiply(1e-4, math.identity(numVertices));
+	// Regularization to ensure invertibility (use config epsilon)
+	const epsilon = get(config).epsilonStability;
+	const reg = math.multiply(epsilon, math.identity(numVertices));
 	A = math.add(A, reg);
 
 	// Build 2D block-diagonal A_bar

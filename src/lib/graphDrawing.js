@@ -2,6 +2,8 @@
 import * as math from 'mathjs';
 import { drawArrow } from '$lib/graphUtils';
 import { calculateDifferential } from '$lib/energyCalculations';
+import { canvasTransform } from '$lib/stores';
+import { get } from 'svelte/store';
 
 export function drawGraph(
 	ctx,
@@ -15,15 +17,28 @@ export function drawGraph(
 	beta,
 	disjointPairs
 ) {
-	// Added parameters
+	// Use get() to access store values in Svelte 5
+	const { offsetX, offsetY, zoom } = get(canvasTransform);
+
+	// Clear the canvas completely in screen coordinates before applying transformations
+	ctx.save();
 	ctx.clearRect(0, 0, width, height);
 
+	// Apply transformations to draw in world coordinates
+	ctx.scale(zoom, zoom);
+	ctx.translate(offsetX / zoom, offsetY / zoom);
+
 	drawEdges(ctx, vertices, edges, kernelMatrix);
-	drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs); // Updated call
+	drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs);
 	drawMidpoints(ctx, edges, edgeProps);
+
+	// Restore context after drawing
+	ctx.restore();
 }
 
 function drawEdges(ctx, vertices, edges, kernelMatrix) {
+	const { zoom } = get(canvasTransform);
+
 	if (kernelMatrix && math.isMatrix(kernelMatrix) && kernelMatrix.size()[0] === edges.length) {
 		const maxKernelValue = math.max(kernelMatrix) || 1; // Avoid division by zero
 
@@ -38,7 +53,7 @@ function drawEdges(ctx, vertices, edges, kernelMatrix) {
 			const red = Math.round(255 * normalizedValue);
 
 			ctx.strokeStyle = `rgb(${red}, 0, ${blue})`;
-			ctx.lineWidth = 1 + normalizedValue * 4;
+			ctx.lineWidth = (1 + normalizedValue * 4) / zoom;
 
 			ctx.beginPath();
 			ctx.moveTo(vertices[edge[0]][0], vertices[edge[0]][1]);
@@ -48,7 +63,7 @@ function drawEdges(ctx, vertices, edges, kernelMatrix) {
 	} else {
 		// Fallback: Draw edges with default style
 		ctx.strokeStyle = 'black';
-		ctx.lineWidth = 1;
+		ctx.lineWidth = 1 / zoom;
 		edges.forEach((edge) => {
 			ctx.beginPath();
 			ctx.moveTo(vertices[edge[0]][0], vertices[edge[0]][1]);
@@ -59,38 +74,60 @@ function drawEdges(ctx, vertices, edges, kernelMatrix) {
 }
 
 function drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs) {
-	// Added parameters
+	const { offsetX, offsetY, zoom } = get(canvasTransform);
 	const gradient = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
 
 	vertices.forEach((vertex, i) => {
-		// Draw circle
+		// Draw circle in world coordinates
 		ctx.beginPath();
-		ctx.arc(vertex[0], vertex[1], 5, 0, 2 * Math.PI);
+		ctx.arc(vertex[0], vertex[1], 5 / zoom, 0, 2 * Math.PI); // World coordinates, scaled for zoom
 		ctx.fillStyle = 'blue';
 		ctx.fill();
 
-		// Draw vertex index above
+		// Transform to screen coordinates for text
+		const screenX = vertex[0] * zoom + offsetX;
+		const screenY = vertex[1] * zoom + offsetY;
 		ctx.fillStyle = 'black';
 		ctx.font = '12px Arial';
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'bottom';
-		ctx.fillText(i.toString(), vertex[0], vertex[1] - 10);
+		ctx.fillText(i.toString(), screenX, screenY - 10 / zoom); // Adjust for zoom
 
-		// Draw gradient arrow
+		// Draw gradient arrow in world coordinates, transform to screen
 		const gradX = -gradient[i][0]; // Negate for -gradient direction
 		const gradY = -gradient[i][1];
 		const magnitude = Math.sqrt(gradX * gradX + gradY * gradY) || 1e-6; // Avoid division by zero
 		const minLength = 20; // Min arrow length for normalization
 		const maxLength = 50; // Max arrow length for normalization
-		const normalizedLength = Math.max(minLength, Math.min(maxLength, magnitude * 1000)); // Scale factor (tweakable)
+		const normalizedLength = Math.max(minLength, Math.min(maxLength, magnitude * 1000)) / zoom; // Scale for zoom
+
+		const arrowStartX = vertex[0];
+		const arrowStartY = vertex[1];
+		const arrowEndX = arrowStartX + (gradX / magnitude) * normalizedLength;
+		const arrowEndY = arrowStartY + (gradY / magnitude) * normalizedLength;
+
+		// Transform arrow endpoints to screen coordinates
+		const screenStartX = arrowStartX * zoom + offsetX;
+		const screenStartY = arrowStartY * zoom + offsetY;
+		const screenEndX = arrowEndX * zoom + offsetX;
+		const screenEndY = arrowEndY * zoom + offsetY;
 
 		ctx.strokeStyle = 'purple'; // Distinct color for gradient arrows
-		ctx.lineWidth = 2;
-		drawArrow(ctx, vertex[0], vertex[1], gradX / magnitude, gradY / magnitude, normalizedLength);
+		ctx.lineWidth = 2 / zoom;
+		drawArrow(
+			ctx,
+			screenStartX,
+			screenStartY,
+			(screenEndX - screenStartX) / normalizedLength,
+			(screenEndY - screenStartY) / normalizedLength,
+			normalizedLength
+		);
 	});
 }
 
 function drawMidpoints(ctx, edges, edgeProps) {
+	const { offsetX, offsetY, zoom } = get(canvasTransform);
+
 	if (!edgeProps || !edgeProps.edgeMidpoints || edgeProps.edgeMidpoints.length !== edges.length) {
 		return;
 	}
@@ -106,19 +143,24 @@ function drawMidpoints(ctx, edges, edgeProps) {
 
 		if (!midpoint || !length || !tangent) return;
 
+		// Draw midpoint circle in world coordinates
 		ctx.fillStyle = 'red';
 		ctx.beginPath();
-		ctx.arc(midpoint[0], midpoint[1], 2, 0, 2 * Math.PI);
+		ctx.arc(midpoint[0], midpoint[1], 2 / zoom, 0, 2 * Math.PI); // World coordinates, scaled for zoom
 		ctx.fill();
 
+		// Transform to screen coordinates for text and arrows
+		const screenX = midpoint[0] * zoom + offsetX;
+		const screenY = midpoint[1] * zoom + offsetY;
+
 		ctx.fillStyle = 'blue';
-		ctx.fillText(`${i}L ${length.toFixed(6)}`, midpoint[0], midpoint[1] - 15); // Modified line
-		ctx.fillText(`T ${tangent.map((t) => t.toFixed(1))}`, midpoint[0], midpoint[1] - 5);
-		ctx.fillText(`${edge[0]}, ${edge[1]}`, midpoint[0], midpoint[1] + 15);
+		ctx.fillText(`${i}L ${length.toFixed(6)}`, screenX, screenY - 15 / zoom); // Adjust for zoom
+		ctx.fillText(`T ${tangent.map((t) => t.toFixed(1))}`, screenX, screenY - 5 / zoom);
+		ctx.fillText(`${edge[0]}, ${edge[1]}`, screenX, screenY + 15 / zoom);
 
 		ctx.strokeStyle = 'green';
-		ctx.lineWidth = 1.5;
-		drawArrow(ctx, midpoint[0], midpoint[1], tangent[0], tangent[1], 20);
+		ctx.lineWidth = 1.5 / zoom;
+		drawArrow(ctx, screenX, screenY, tangent[0], tangent[1], 20 / zoom); // Adjust for zoom
 	});
 }
 

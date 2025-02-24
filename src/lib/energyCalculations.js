@@ -1,5 +1,7 @@
 // src/lib/energyCalculations.js
 import * as math from 'mathjs';
+import { get } from 'svelte/store';
+import { config } from '$lib/stores';
 
 let logging = false;
 
@@ -43,34 +45,31 @@ export function calculateEdgeProperties(vertices, edges) {
 }
 
 export function tangentPointKernel(p, q, T, alpha, beta) {
-	// For 2D vectors, cross product is just determinant of 2x2 matrix
 	const p_ = math.matrix(p);
 	const q_ = math.matrix(q);
 	const T_ = math.matrix(T);
+	const epsilon = get(config).epsilonKernel; // Use config epsilon
 
 	const diff = math.subtract(p_, q_);
-	const diffNorm = math.norm(diff);
-	// if (diffNorm < 1e-10) return 0; // Points too close together
+	const diffNorm = math.norm(diff) + epsilon; // Prevent division by zero
+	const cross2D = T_.get([0]) * diff.get([1]) - T_.get([1]) * diff.get([0]); // 2D cross product (determinant)
 
-	// cross = T x (p - q)
-	const cross2D = T_.get([0]) * diff.get([1]) - T_.get([1]) * diff.get([0]);
-
-	// Scale the result for better visibility
-	const epsilon = 1e-6; // Prevent division by zero
 	const numerator = Math.pow(Math.abs(cross2D), alpha);
-	const denominator = Math.pow(diffNorm + epsilon, beta);
-	const result = numerator / denominator; // Scale by 100 for better visibility
+	const denominator = Math.pow(diffNorm, beta);
+	const result = numerator / denominator;
 
-	// console.log('Kernel calc:', {
-	// 	p: p_.toArray(),
-	// 	q: q_.toArray(),
-	// 	T: T_.toArray(),
-	// 	cross2D,
-	// 	diffNorm,
-	// 	numerator,
-	// 	denominator,
-	// 	result
-	// });
+	if (logging) {
+		console.log('Kernel calc:', {
+			p: p_.toArray(),
+			q: q_.toArray(),
+			T: T_.toArray(),
+			cross2D,
+			diffNorm,
+			numerator,
+			denominator,
+			result
+		});
+	}
 
 	return result;
 }
@@ -80,15 +79,13 @@ export function calculateDisjointEdgePairs(edges) {
 	const disjointPairs = [];
 
 	for (let i = 0; i < numEdges; i++) {
-		disjointPairs[i] = []; // Initialize the array for edge i
+		disjointPairs[i] = [];
 		for (let j = 0; j < numEdges; j++) {
-			if (i === j) continue; // Don't compare an edge to itself
+			if (i === j) continue;
 
 			const edge1 = edges[i];
 			const edge2 = edges[j];
 
-			// Check if the edges share any vertices.  If they don't share any,
-			// they are disjoint.
 			if (
 				edge1[0] !== edge2[0] &&
 				edge1[0] !== edge2[1] &&
@@ -99,7 +96,7 @@ export function calculateDisjointEdgePairs(edges) {
 			}
 		}
 	}
-	console.log('Calculated disjointPairs:', disjointPairs); // Add this
+	console.log('Calculated disjointPairs:', disjointPairs);
 	return disjointPairs;
 }
 
@@ -107,21 +104,18 @@ export function calculateDiscreteKernel(vertices, edges, edgeTangents, alpha, be
 	const numEdges = edges.length;
 	const kernelMatrix = math.zeros(numEdges, numEdges);
 
-	// Add defensive checks for disjointPairs
 	if (!disjointPairs || !Array.isArray(disjointPairs) || disjointPairs.length === 0) {
 		console.warn('No disjoint pairs found, returning zero kernel matrix');
 		return kernelMatrix;
 	}
 
 	for (let i = 0; i < numEdges; i++) {
-		// Add defensive check for disjointPairs[i]
 		if (!disjointPairs[i]) {
 			console.warn(`No disjoint pairs for edge ${i}`);
 			continue;
 		}
 
 		for (const j of disjointPairs[i]) {
-			// Defensive check: Ensure i and j are valid indices
 			if (i < edges.length && j < edges.length) {
 				let sum = 0;
 				const combinations = [
@@ -168,9 +162,7 @@ export function calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPa
 
 	for (let i = 0; i < numEdges; i++) {
 		for (const j of disjointPairs[i]) {
-			// No need for the neighbor check anymore!
 			if (i < edges.length && j < edges.length) {
-				// Add defensive check
 				const kernelValue = kernelMatrix.get([i, j]);
 				totalEnergy += kernelValue * edgeLengths[i] * edgeLengths[j];
 			}
@@ -179,19 +171,16 @@ export function calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPa
 	return totalEnergy / 2; // Divide by 2 because of symmetry
 }
 
-// Function to calculate the differential (not the L2 gradient)
 export function calculateDifferential(vertices, edges, alpha, beta, disjointPairs) {
-	const h = 1e-4;
+	const h = get(config).finiteDiffH; // Use config finiteDiffH
 	const numVertices = vertices.length;
 	const differential = [];
 
-	// Compute baseline energy
 	const E_original = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
 
 	for (let i = 0; i < numVertices; i++) {
 		differential[i] = [0, 0];
 		for (let dim = 0; dim < 2; dim++) {
-			// Create a deep copy of vertices to perturb
 			const vertices_perturbed = vertices.map((v) => [...v]);
 			vertices_perturbed[i][dim] += h;
 			const E_perturbed = calculateDiscreteEnergy(
@@ -207,30 +196,25 @@ export function calculateDifferential(vertices, edges, alpha, beta, disjointPair
 	console.log('Computed differential:', differential);
 	return differential;
 }
-// for later use.
+
 function calculateL2Gradient(vertices, edges, alpha, beta, disjointPairs) {
-	const h = 0.0001; // Small change for finite differences
+	const h = get(config).finiteDiffH; // Use config finiteDiffH
 	const numVertices = vertices.length;
 	const gradient = [];
 
 	const originalEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
 
 	for (let i = 0; i < numVertices; i++) {
-		gradient[i] = [0, 0]; // Initialize gradient for this vertex
+		gradient[i] = [0, 0];
 
 		for (let j = 0; j < 2; j++) {
-			// x and y coordinates
-			// Perturb the vertex coordinate
 			const originalValue = vertices[i][j];
 			vertices[i][j] += h;
 
-			// Recalculate the energy
 			const newEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
 
-			// Approximate the partial derivative
 			gradient[i][j] = (newEnergy - originalEnergy) / h;
 
-			// Restore the original value
 			vertices[i][j] = originalValue;
 		}
 	}
