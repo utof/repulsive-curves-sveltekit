@@ -20,12 +20,13 @@
 	let optimizer;
 	let cleanupInteractions = () => {};
 	let isOptimizing = false;
+	let initialEdgeLengths = [];
 
 	const width = 700;
 	const height = 700;
-	const alpha = 3;
-	const beta = 6;
-	const stepSize = 100000;
+	const alpha = 2;
+	const beta = 4.5;
+	const stepSize = 1000000;
 	// const stepSize = 100;
 	const maxIterations = 1000;
 
@@ -77,7 +78,9 @@
 		$kernelData = initialKernel;
 		$previousEnergy = initialKernel.discreteEnergy;
 
-		// if (optimizer) optimizer.stop();
+		// Store initial edge lengths
+		initialEdgeLengths = initialKernel.edgeProps.edgeLengths;
+
 		optimizer = createOptimizer(
 			$vertices,
 			$edges,
@@ -85,7 +88,8 @@
 			beta,
 			initialKernel.disjointPairs,
 			maxIterations,
-			updateVisualization
+			updateVisualization,
+			initialEdgeLengths // Pass initialEdgeLengths
 		);
 
 		cleanupInteractions();
@@ -96,7 +100,7 @@
 
 	function startOptimization() {
 		if (optimizer && !isOptimizing) {
-			console.log('Start optimization clicked');
+			// console.log('Start optimization clicked');
 			optimizer.start();
 			isOptimizing = true;
 		}
@@ -112,7 +116,7 @@
 
 	function singleStep() {
 		if (optimizer) {
-			console.log('Single step clicked');
+			// console.log('Single step clicked');
 			optimizer.step();
 		}
 	}
