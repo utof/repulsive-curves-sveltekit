@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { drawGraph, drawKernelMatrix } from '$lib/graphDrawing';
 	import { createOptimizer } from '$lib/optimization';
-	import { generateRandomGraph } from '$lib/graphUtils';
+	import { generateRandomGraph, generateBipartiteGraph } from '$lib/graphUtils';
 	import { setupInteractions } from '$lib/interaction';
 	import { initializeKernelState, updateKernelState } from '$lib/graphState';
 	import {
@@ -20,15 +20,15 @@
 	let optimizer;
 	let cleanupInteractions = () => {};
 	let isOptimizing = false;
-	let initialEdgeLengths = [];
+	let graphType = 'bipartite'; // Default to random graph
 
 	const width = 700;
 	const height = 700;
-	const alpha = 2;
-	const beta = 4.5;
+	let alpha = 3; // Default values from paper recommendation
+	let beta = 6;
 	const stepSize = 1000000;
-	// const stepSize = 100;
 	const maxIterations = 1000;
+	let initialEdgeLengths = [];
 
 	onMount(() => {
 		graphCtx = graphCanvas.getContext('2d');
@@ -70,7 +70,12 @@
 	function regenerateGraph() {
 		$previousEnergy = 0;
 		$energyChange = 0;
-		const { vertices: newVertices, edges: newEdges } = generateRandomGraph(width, height);
+		let newVertices, newEdges;
+		if (graphType === 'random') {
+			({ vertices: newVertices, edges: newEdges } = generateRandomGraph(width, height));
+		} else if (graphType === 'bipartite') {
+			({ vertices: newVertices, edges: newEdges } = generateBipartiteGraph(width, height));
+		}
 		$vertices = newVertices;
 		$edges = newEdges;
 
@@ -78,7 +83,6 @@
 		$kernelData = initialKernel;
 		$previousEnergy = initialKernel.discreteEnergy;
 
-		// Store initial edge lengths
 		initialEdgeLengths = initialKernel.edgeProps.edgeLengths;
 
 		optimizer = createOptimizer(
@@ -89,7 +93,7 @@
 			initialKernel.disjointPairs,
 			maxIterations,
 			updateVisualization,
-			initialEdgeLengths // Pass initialEdgeLengths
+			initialEdgeLengths
 		);
 
 		cleanupInteractions();
@@ -100,7 +104,7 @@
 
 	function startOptimization() {
 		if (optimizer && !isOptimizing) {
-			// console.log('Start optimization clicked');
+			console.log('Start optimization clicked');
 			optimizer.start();
 			isOptimizing = true;
 		}
@@ -116,9 +120,22 @@
 
 	function singleStep() {
 		if (optimizer) {
-			// console.log('Single step clicked');
+			console.log('Single step clicked');
 			optimizer.step();
 		}
+	}
+
+	function updateAlphaBeta() {
+		// Update kernel state and visualization when sliders change
+		const updatedKernel = updateKernelState(
+			$vertices,
+			$edges,
+			alpha,
+			beta,
+			$kernelData.disjointPairs
+		);
+		$kernelData = { ...updatedKernel, disjointPairs: $kernelData.disjointPairs };
+		updateVisualization();
 	}
 
 	function getEnergyChangeColor() {
@@ -142,6 +159,31 @@
 					<p>Discrete Energy: {$discreteEnergy.toFixed(4)}</p>
 					<p style="color: {getEnergyChangeColor()}">Energy Change: {$energyChange.toFixed(4)}</p>
 				</div>
+				<!-- Sliders for alpha and beta -->
+				<label for="alpha"
+					>Alpha (1 lt α lt ∞): <input
+						type="range"
+						id="alpha"
+						min="1.1"
+						max="10"
+						step="0.1"
+						bind:value={alpha}
+						on:input={updateAlphaBeta}
+					/></label
+				>
+				<p>Alpha: {alpha.toFixed(1)}</p>
+				<label for="beta"
+					>Beta (α+2 ≤ β ≤ 2α+1): <input
+						type="range"
+						id="beta"
+						min={alpha + 2}
+						max={2 * alpha + 1}
+						step="0.1"
+						bind:value={beta}
+						on:input={updateAlphaBeta}
+					/></label
+				>
+				<p>Beta: {beta.toFixed(1)}</p>
 			</div>
 			<canvas bind:this={graphCanvas} {width} {height} style="position: absolute; top: 0; left: 0;"
 			></canvas>
@@ -161,5 +203,8 @@
 	.graph-section,
 	.kernel-section {
 		flex: 1;
+	}
+	input[type='range'] {
+		width: 200px;
 	}
 </style>

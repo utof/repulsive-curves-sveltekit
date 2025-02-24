@@ -82,3 +82,28 @@ export function generateRandomGraph(width, height) {
 	}
 	return { vertices, edges };
 }
+
+export function generateBipartiteGraph(width, height) {
+	// 3x3 bipartite graph: vertices split into two sets (left and right), connected across
+	const vertices = [];
+	const edges = [];
+
+	// Left set (3 vertices)
+	for (let i = 0; i < 3; i++) {
+		vertices.push([width * 0.3, height * (0.2 + i * 0.3)]);
+	}
+
+	// Right set (3 vertices)
+	for (let i = 0; i < 3; i++) {
+		vertices.push([width * 0.7, height * (0.2 + i * 0.3)]);
+	}
+
+	// Connect each left vertex to all right vertices (bipartite)
+	for (let i = 0; i < 3; i++) {
+		for (let j = 0; j < 3; j++) {
+			edges.push([i, 3 + j]); // Connect left (0-2) to right (3-5)
+		}
+	}
+
+	return { vertices, edges };
+}
