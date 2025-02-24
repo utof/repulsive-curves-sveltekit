@@ -2,7 +2,7 @@ thoughts:
 
 wtf even L2 is getting stuck. something is up with the gradients.
 project constraints works i guess.
-but wtf does barycenter do. 
+but wtf does barycenter do. i think it doesnt work.
 
 # todo:
 
