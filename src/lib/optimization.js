@@ -101,7 +101,7 @@ export function gradientDescentStep(
 
 		// Project onto edge length and barycenter constraints
 		// projectConstraints(vertices_new, edges, initialEdgeLengths);
-		enforceBarycenter(vertices_new, edges, initialEdgeLengths);
+		// enforceBarycenter(vertices_new, edges, initialEdgeLengths);
 
 		const E_new = calculateDiscreteEnergy(vertices_new, edges, alpha, beta, disjointPairs);
 		if (E_new <= E_old + a_const * t * slope) {
