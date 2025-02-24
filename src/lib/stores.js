@@ -2,7 +2,7 @@
 import { writable, derived } from 'svelte/store';
 
 export const config = writable({
-	epsilonStability: 1e-8, // For small distance checks (e.g., prevent division by zero)
+	epsilonStability: 1e-7, // For small distance checks (e.g., prevent division by zero)
 	epsilonKernel: 1e-6, // For kernel denominators (prevent singularities)
 	finiteDiffH: 1e-4, // Step size for finite differences
 	constraintTolerance: 1e-7, // Tolerance for constraint projection

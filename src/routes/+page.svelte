@@ -2,7 +2,11 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { drawGraph, drawKernelMatrix } from '$lib/graphDrawing';
 	import { createOptimizer } from '$lib/optimization';
-	import { generateRandomGraph, generateBipartiteGraph } from '$lib/graphUtils';
+	import {
+		generateRandomGraph,
+		generateBipartiteGraph,
+		generate2x3BipartiteGraph
+	} from '$lib/graphUtils';
 	import { setupInteractions } from '$lib/interaction';
 	import { initializeKernelState, updateKernelState } from '$lib/graphState';
 	import {
@@ -79,7 +83,7 @@
 		if (graphType === 'random') {
 			({ vertices: newVertices, edges: newEdges } = generateRandomGraph(width, height));
 		} else if (graphType === 'bipartite') {
-			({ vertices: newVertices, edges: newEdges } = generateBipartiteGraph(width, height));
+			({ vertices: newVertices, edges: newEdges } = generate2x3BipartiteGraph(width, height));
 		}
 		$vertices = newVertices;
 		$edges = newEdges;

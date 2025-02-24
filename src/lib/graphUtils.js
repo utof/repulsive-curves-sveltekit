@@ -107,3 +107,28 @@ export function generateBipartiteGraph(width, height) {
 
 	return { vertices, edges };
 }
+
+export function generate2x3BipartiteGraph(width, height) {
+	// 2x3 bipartite graph: vertices split into two sets (left and right), connected across
+	const vertices = [];
+	const edges = [];
+
+	// Left set (2 vertices)
+	for (let i = 0; i < 2; i++) {
+		vertices.push([width * 0.3, height * (0.3 + i * 0.4)]);
+	}
+
+	// Right set (3 vertices)
+	for (let i = 0; i < 3; i++) {
+		vertices.push([width * 0.7, height * (0.2 + i * 0.3)]);
+	}
+
+	// Connect each left vertex to all right vertices (bipartite)
+	for (let i = 0; i < 2; i++) {
+		for (let j = 0; j < 3; j++) {
+			edges.push([i, 2 + j]); // Connect left (0-1) to right (2-4)
+		}
+	}
+
+	return { vertices, edges };
+}
