@@ -1561,11 +1561,7 @@ B_{j_a i_b}^0 -= & \frac{1}{4} w_{IJ}^0, & B_{j_a j_b}^0 += & \frac{1}{4} w_{IJ}
 
 Above is a cpp implementation of the paper by someone on, and then mine in js.
 
-Note that my implementation is for 2d only. Think thru and implement the next step(s) in the js implementation and svelte5 based on the paper and the cpp code. You may refactor and optimize my code as well. Trust the given text and codes more than the paper to avoid vision and text incompatibilities.
+Note that my implementation is for 2d only. Think thru and implement the needed step(s) in the js implementation and svelte5 based on the paper and the cpp code. You may refactor and optimize my code as well. Trust the given text and codes more than the paper to avoid vision and text incompatibilities.
 Other known issues and tasks include:
 
-1. when zooming in and dragging, edges and vertices are updated, but not the text like length etc at the midpoint, same with arrows of vertices, and their numbers. They shift in the same dir, but as if scaled by a constant.
-2. project constraint doesnt work, graph doesnt move and it says line search did not converge.
-3. Make the controls of epsilons etc be a step of e^-STEP e.g. e-1 to e-2 etc. Similar with amarijo constant but just make the min and max vals a bit wilder to make me see what contribution they give. and move the controls to a separate component and import it.
-4. do the derivative from cpp but make it allow to disable it/or a choice for debugging purposes.
-5. Despite my attempts at implementation, even the simple 2x3 bipartite graph fails to minimize the energy, being stuck at the point of almost untangling. Figure out the issue. For example a lot of times graphs (when random or 3x3 bipartite) get aligned along a long edge and then kinda get stuck there.
+Despite my attempts at implementation, even the simple 2x3 bipartite graph fails to minimize the energy, being stuck at the point of almost untangling. Figure out the issue. Even L2 gradient fails. For example a lot of times graphs (when random or 3x3 bipartite) get aligned along a long edge and then kinda get stuck there. I have disabled analytical difference because it's buggy but don't worry about it.

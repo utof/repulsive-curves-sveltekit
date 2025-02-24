@@ -1,4 +1,14 @@
+thoughts:
+
+wtf even L2 is getting stuck. something is up with the gradients.
+project constraints works i guess.
+but wtf does barycenter do. 
+
 # todo:
+
+### logic
+
+[ ] fix analytical by giving only cpp + js files.
 
 console log only every 1 sec or at the end of operations
 
@@ -20,3 +30,8 @@ console log only every 1 sec or at the end of operations
 ### ui
 
 nicer controls ui
+
+
+### dev experience
+
+[ ] move all the controls (start stop animation, step) in the controls.svelte, not just the sliders.

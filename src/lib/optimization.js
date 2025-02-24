@@ -9,35 +9,48 @@ import * as math from 'mathjs';
 import { get } from 'svelte/store';
 import { config } from '$lib/stores';
 
+function l2GradientDescentStep(vertices, edges, alpha, beta, disjointPairs, initialEdgeLengths, edgeTangents, edgeLengths) {
+    const differential = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
+    const gradient = differential.map(([dx, dy]) => [dx, dy]);
+    const stepSize = 100000;
+    const newVertices = vertices.map((vertex, i) => [
+        vertex[0] - stepSize * gradient[i][0],
+        vertex[1] - stepSize * gradient[i][1]
+    ]);
+    // projectConstraints(newVertices, edges, initialEdgeLengths);
+    // enforceBarycenter(newVertices, edges, edgeLengths);
+    return newVertices;
+}
+
 function projectConstraints(
-	vertices,
-	edges,
-	initialEdgeLengths,
-	maxIterations = get(config).maxLineSearch,
-	tolerance = get(config).constraintTolerance
+    vertices,
+    edges,
+    initialEdgeLengths,
+    maxIterations = get(config).maxLineSearch,
+    tolerance = get(config).constraintTolerance
 ) {
-	for (let iter = 0; iter < maxIterations; iter++) {
-		let maxError = 0;
-		for (let I = 0; I < edges.length; I++) {
-			const [i, j] = edges[I];
-			const vi = vertices[i];
-			const vj = vertices[j];
-			const d = [vj[0] - vi[0], vj[1] - vi[1]];
-			const currentLength = Math.sqrt(d[0] * d[0] + d[1] * d[1]);
-			const targetLength = initialEdgeLengths[I];
-			const error = currentLength - targetLength;
-			if (Math.abs(error) > tolerance) {
+    for (let iter = 0; iter < maxIterations; iter++) {
+        let maxError = 0;
+        for (let I = 0; I < edges.length; I++) {
+            const [i, j] = edges[I];
+            const vi = vertices[i];
+            const vj = vertices[j];
+            const d = [vj[0] - vi[0], vj[1] - vi[1]];
+            const currentLength = Math.sqrt(d[0] * d[0] + d[1] * d[1]);
+            const targetLength = initialEdgeLengths[I];
+            const error = currentLength - targetLength;
+            if (Math.abs(error) > tolerance) {
 				const correction = (error / currentLength) * 0.5;
-				const delta = [d[0] * correction, d[1] * correction];
-				vertices[i][0] += delta[0];
-				vertices[i][1] += delta[1];
-				vertices[j][0] -= delta[0];
-				vertices[j][1] -= delta[1];
-				maxError = Math.max(maxError, Math.abs(error));
-			}
-		}
-		if (maxError < tolerance) break;
-	}
+                const delta = [d[0] * correction, d[1] * correction];
+                vertices[i][0] += delta[0];
+                vertices[i][1] += delta[1];
+                vertices[j][0] -= delta[0];
+                vertices[j][1] -= delta[1];
+                maxError = Math.max(maxError, Math.abs(error));
+            }
+        }
+        if (maxError < tolerance) break;
+    }
 }
 
 function enforceBarycenter(vertices, edges, edgeLengths) {
@@ -59,59 +72,63 @@ function enforceBarycenter(vertices, edges, edgeLengths) {
 }
 
 export function gradientDescentStep(
-	vertices,
-	edges,
-	alpha,
-	beta,
-	disjointPairs,
-	initialEdgeLengths,
-	a_const = get(config).aConst,
-	b_const = get(config).bConst,
-	max_line_search = get(config).maxLineSearch
+    vertices,
+    edges,
+    alpha,
+    beta,
+    disjointPairs,
+    initialEdgeLengths,
+    a_const = get(config).aConst,
+    b_const = get(config).bConst,
+    max_line_search = get(config).maxLineSearch
 ) {
-	console.log('Gradient Descent Step - Initial vertices:', JSON.stringify(vertices));
-	const { edgeTangents } = calculateEdgeProperties(vertices, edges);
+    const stepsize = 1000;
+    const { edgeTangents, edgeLengths } = calculateEdgeProperties(vertices, edges);
+    return l2GradientDescentStep(vertices, edges, alpha, beta, disjointPairs, initialEdgeLengths, edgeTangents, edgeLengths);
+    console.log('Gradient Descent Step - Initial vertices:', JSON.stringify(vertices));
 
-	const differential = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
-	const gradient = computePreconditionedGradient(
-		vertices,
-		edges,
-		edgeTangents,
-		alpha,
-		beta,
-		differential
-	);
+    const differential = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
+    const gradient = computePreconditionedGradient(
+        vertices,
+        edges,
+        edgeTangents,
+        alpha,
+        beta,
+        differential
+    );
 
-	const d = gradient.map(([gx, gy]) => [-gx, -gy]); // Negative gradient for descent
-	const d_norm = Math.sqrt(d.flat().reduce((sum, val) => sum + val * val, 0)) || 1;
-	const d_normalized = d.map(([dx, dy]) => [dx / d_norm, dy / d_norm]);
+    const d = gradient.map(([gx, gy]) => [-gx, -gy]);
+    const d_norm = Math.sqrt(d.flat().reduce((sum, val) => sum + val * val, 0)) || 1;
+    const d_normalized = d.map(([dx, dy]) => [dx / d_norm, dy / d_norm]);
 
-	const differentialFlat = differential.flat();
-	const dFlat = d_normalized.flat();
-	const slope = math.dot(differentialFlat, dFlat);
+    const differentialFlat = differential.flat();
+    const dFlat = d_normalized.flat();
+    const slope = math.dot(differentialFlat, dFlat);
 
-	const E_old = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+    const E_old = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
 
 	let t = get(config).tauInitial;
-	for (let i = 0; i < max_line_search; i++) {
-		const vertices_new = vertices.map((vertex, idx) => [
-			vertex[0] + t * d_normalized[idx][0],
-			vertex[1] + t * d_normalized[idx][1]
-		]);
+    for (let i = 0; i < max_line_search; i++) {
+        const vertices_new = vertices.map((vertex, idx) => [
+            vertex[0] + t * d_normalized[idx][0]*stepsize,
+            vertex[1] + t * d_normalized[idx][1]*stepsize
+        ]);
 
-		// Project onto edge length and barycenter constraints
-		// projectConstraints(vertices_new, edges, initialEdgeLengths);
-		enforceBarycenter(vertices_new, edges, initialEdgeLengths);
+        // Project onto edge length and barycenter constraints
+        // projectConstraints(vertices_new, edges, initialEdgeLengths);
+        // enforceBarycenter(vertices_new, edges, edgeLengths);
 
-		const E_new = calculateDiscreteEnergy(vertices_new, edges, alpha, beta, disjointPairs);
-		if (E_new <= E_old + a_const * t * slope) {
-			return vertices_new;
-		}
-		t *= b_const;
-	}
-
-	console.warn('Line search did not converge');
-	return vertices;
+        const E_new = calculateDiscreteEnergy(vertices_new, edges, alpha, beta, disjointPairs);
+        console.log(`Line search iteration ${i}: t=${t}, E_new=${E_new}, E_old=${E_old}, condition=${E_old + a_const * t * slope}`);
+        if (E_new <= E_old + a_const * t * slope) {
+            console.log('Line search converged at t=', t);
+            return vertices_new;
+        }
+        // t *= b_const;
+    }
+    
+    console.warn('Line search did not converge after max iterations');
+    return vertices; // Return original vertices if no convergence
 }
 
 export function createOptimizer(

@@ -9,7 +9,8 @@ export const config = writable({
 	tauInitial: 1.0, // Initial time step for line search
 	aConst: 0.1, // Armijo condition constant (0 < a_const < 0.5)
 	bConst: 0.5, // Backtracking reduction factor (0 < b_const < 1)
-	maxLineSearch: 20 // Maximum iterations for line search
+	maxLineSearch: 20, // Maximum iterations for line search
+	differentialMethod: 'finiteDifference' // or 'finiteDifference' or analytical
 });
 
 export const vertices = writable([]);

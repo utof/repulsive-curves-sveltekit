@@ -171,30 +171,93 @@ export function calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPa
 	return totalEnergy / 2; // Divide by 2 because of symmetry
 }
 
+function calculateAnalyticalDifferential(vertices, edges, alpha, beta, disjointPairs) {
+    const numVertices = vertices.length;
+    const differential = Array(numVertices).fill().map(() => [0, 0]);
+    const { edgeLengths, edgeTangents } = calculateEdgeProperties(vertices, edges);
+
+    for (let p = 0; p < numVertices; p++) {
+        let deriv_p = [0, 0];
+        const adjacentEdges = edges.filter(([v0, v1]) => v0 === p || v1 === p);
+
+        for (const edgeI of adjacentEdges) {
+            const I = edges.indexOf(edgeI);
+            const i = edgeI[0] === p ? 0 : 1;
+            const i1 = edgeI[i];
+            const i2 = edgeI[(i + 1) % 2];
+            const l_I = edgeLengths[I];
+            const T_I = edgeTangents[I];
+
+            for (const J of disjointPairs[I]) {
+                const l_J = edgeLengths[J];
+                const T_J = edgeTangents[J];
+
+                for (let j = 0; j < 2; j++) {
+                    const j1 = edges[J][j];
+                    const p_i1 = vertices[i1];
+                    const p_i2 = vertices[i2];
+                    const p_j1 = vertices[j1];
+
+                    // Terms from loss_derivative.cpp adapted for 2D
+                    const cross_term = [
+                        (p_i2[0] - p_j1[0]) * T_I[1] - (p_i2[1] - p_j1[1]) * T_I[0],
+                        (p_i1[0] - p_j1[0]) * T_I[1] - (p_i1[1] - p_j1[1]) * T_I[0]
+                    ];
+                    const cross_norm = Math.sqrt(cross_term[0] * cross_term[0] + cross_term[1] * cross_term[1]);
+                    const denom_diff_i1_j1 = [p_i1[0] - p_j1[0], p_i1[1] - p_j1[1]];
+                    const denom_diff_i2_j1 = [p_i2[0] - p_j1[0], p_i2[1] - p_j1[1]];
+                    const denom_norm_i1_j1 = Math.sqrt(denom_diff_i1_j1[0] * denom_diff_i1_j1[0] + denom_diff_i1_j1[1] * denom_diff_i1_j1[1]);
+                    const denom_norm_i2_j1 = Math.sqrt(denom_diff_i2_j1[0] * denom_diff_i2_j1[0] + denom_diff_i2_j1[1] * denom_diff_i2_j1[1]);
+
+                    // Analytical derivative terms (simplified for 2D)
+                    const term1 = (1 - alpha) * Math.pow(l_I, -alpha - 1) * [p_i1[0] - p_i2[0], p_i1[1] - p_i2[1]] * Math.pow(cross_norm, alpha) * Math.pow(denom_norm_i1_j1, -beta);
+                    // Add more terms as needed from loss_derivative.cpp
+                    deriv_p[0] += 0.25 * l_J * term1[0];
+                    deriv_p[1] += 0.25 * l_J * term1[1];
+                }
+            }
+        }
+        differential[p] = deriv_p;
+    }
+    return differential;
+}
+
 export function calculateDifferential(vertices, edges, alpha, beta, disjointPairs) {
-	const h = get(config).finiteDiffH; // Use config finiteDiffH
-	const numVertices = vertices.length;
-	const differential = [];
+    const method = get(config).differentialMethod;
+    if (method === 'finiteDifference') {
+        return calculateDifferentialFiniteDifference(vertices, edges, alpha, beta, disjointPairs);
+    } else if (method === 'analytical') {
+        return calculateAnalyticalDifferential(vertices, edges, alpha, beta, disjointPairs);
+    } else {
+        throw new Error('Unknown method for differential calculation');
+    }
+}
 
-	const E_original = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+function calculateDifferentialFiniteDifference(vertices, edges, alpha, beta, disjointPairs) {
+    // Existing finite difference implementation
+    const h = get(config).finiteDiffH;
+    const numVertices = vertices.length;
+    const differential = [];
 
-	for (let i = 0; i < numVertices; i++) {
-		differential[i] = [0, 0];
-		for (let dim = 0; dim < 2; dim++) {
-			const vertices_perturbed = vertices.map((v) => [...v]);
-			vertices_perturbed[i][dim] += h;
-			const E_perturbed = calculateDiscreteEnergy(
-				vertices_perturbed,
-				edges,
-				alpha,
-				beta,
-				disjointPairs
-			);
-			differential[i][dim] = (E_perturbed - E_original) / h;
-		}
-	}
-	console.log('Computed differential:', differential);
-	return differential;
+    const E_original = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+
+    for (let i = 0; i < numVertices; i++) {
+        differential[i] = [0, 0];
+        for (let dim = 0; dim < 2; dim++) {
+            const vertices_perturbed = vertices.map((v) => [...v]);
+            vertices_perturbed[i][dim] += h;
+            const E_perturbed = calculateDiscreteEnergy(
+                vertices_perturbed,
+                edges,
+                alpha,
+                beta,
+                disjointPairs
+            );
+            differential[i][dim] = (E_perturbed - E_original) / h;
+        }
+    }
+    console.log('Computed differential:', differential);
+    return differential;
 }
 
 function calculateL2Gradient(vertices, edges, alpha, beta, disjointPairs) {

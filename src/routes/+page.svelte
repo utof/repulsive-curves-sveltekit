@@ -1,4 +1,5 @@
 <script>
+	import Controls from '$lib/Controls.svelte';
 	import { onMount, onDestroy } from 'svelte';
 	import { drawGraph, drawKernelMatrix } from '$lib/graphDrawing';
 	import { createOptimizer } from '$lib/optimization';
@@ -175,116 +176,7 @@
 			<p>Discrete Energy: {$discreteEnergy.toFixed(4)}</p>
 			<p style="color: {getEnergyChangeColor()}">Energy Change: {$energyChange.toFixed(4)}</p>
 		</div>
-		<!-- Sliders for alpha and beta -->
-		<label for="alpha"
-			>Alpha (1 &lt; α &lt; ∞): <input
-				type="range"
-				id="alpha"
-				min="1.1"
-				max="10"
-				step="0.1"
-				bind:value={alpha}
-				on:input={updateAlphaBeta}
-			/></label
-		>
-		<p>Alpha: {alpha.toFixed(1)}</p>
-		<label for="beta"
-			>Beta (α+2 ≤ β ≤ 2α+1): <input
-				type="range"
-				id="beta"
-				min={alpha + 2}
-				max={2 * alpha + 1}
-				step="0.1"
-				bind:value={beta}
-				on:input={updateAlphaBeta}
-			/></label
-		>
-		<p>Beta: {beta.toFixed(1)}</p>
-		<!-- Config parameters -->
-		<label for="epsilonStability"
-			>Epsilon Stability: <input
-				type="range"
-				id="epsilonStability"
-				min="1e-10"
-				max="1e-5"
-				step="1e-9"
-				bind:value={$config.epsilonStability}
-				on:input={updateConfig}
-			/></label
-		>
-		<p>Epsilon Stability: {$config.epsilonStability.toExponential(2)}</p>
-		<label for="epsilonKernel"
-			>Epsilon Kernel: <input
-				type="range"
-				id="epsilonKernel"
-				min="1e-10"
-				max="1e-5"
-				step="1e-9"
-				bind:value={$config.epsilonKernel}
-				on:input={updateConfig}
-			/></label
-		>
-		<p>Epsilon Kernel: {$config.epsilonKernel.toExponential(2)}</p>
-		<label for="finiteDiffH"
-			>Finite Diff H: <input
-				type="range"
-				id="finiteDiffH"
-				min="1e-6"
-				max="1e-3"
-				step="1e-6"
-				bind:value={$config.finiteDiffH}
-				on:input={updateConfig}
-			/></label
-		>
-		<p>Finite Diff H: {$config.finiteDiffH.toExponential(2)}</p>
-		<label for="constraintTolerance"
-			>Constraint Tolerance: <input
-				type="range"
-				id="constraintTolerance"
-				min="1e-10"
-				max="1e-5"
-				step="1e-9"
-				bind:value={$config.constraintTolerance}
-				on:input={updateConfig}
-			/></label
-		>
-		<p>Constraint Tolerance: {$config.constraintTolerance.toExponential(2)}</p>
-		<label for="aConst"
-			>Armijo Constant: <input
-				type="range"
-				id="aConst"
-				min="0.01"
-				max="0.5"
-				step="0.01"
-				bind:value={$config.aConst}
-				on:input={updateConfig}
-			/></label
-		>
-		<p>Armijo Constant: {$config.aConst.toFixed(2)}</p>
-		<label for="bConst"
-			>Backtracking Factor: <input
-				type="range"
-				id="bConst"
-				min="0.1"
-				max="0.9"
-				step="0.01"
-				bind:value={$config.bConst}
-				on:input={updateConfig}
-			/></label
-		>
-		<p>Backtracking Factor: {$config.bConst.toFixed(2)}</p>
-		<label for="maxLineSearch"
-			>Max Line Search: <input
-				type="range"
-				id="maxLineSearch"
-				min="10"
-				max="50"
-				step="1"
-				bind:value={$config.maxLineSearch}
-				on:input={updateConfig}
-			/></label
-		>
-		<p>Max Line Search: {$config.maxLineSearch}</p>
+		<Controls on:update={updateVisualization} />
 	</div>
 	<div class="graph-section">
 		<div class="graph-container" style="position: relative; width: {width}px; height: {height}px;">
@@ -306,8 +198,5 @@
 	.graph-section,
 	.kernel-section {
 		flex: 1;
-	}
-	input[type='range'] {
-		width: 200px;
 	}
 </style>
