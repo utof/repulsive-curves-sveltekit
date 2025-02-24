@@ -73,95 +73,98 @@ function drawEdges(ctx, vertices, edges, kernelMatrix) {
 	}
 }
 
+// src/lib/graphDrawing.js
 function drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs) {
-	const { offsetX, offsetY, zoom } = get(canvasTransform);
-	const gradient = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
+    const { offsetX, offsetY, zoom } = get(canvasTransform);
+    const gradient = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
 
-	vertices.forEach((vertex, i) => {
-		// Draw circle in world coordinates
-		ctx.beginPath();
-		ctx.arc(vertex[0], vertex[1], 5 / zoom, 0, 2 * Math.PI); // World coordinates, scaled for zoom
-		ctx.fillStyle = 'blue';
-		ctx.fill();
+    vertices.forEach((vertex, i) => {
+        // Draw circle in world coordinates
+        ctx.beginPath();
+        ctx.arc(vertex[0], vertex[1], 5 / zoom, 0, 2 * Math.PI);
+        ctx.fillStyle = 'blue';
+        ctx.fill();
 
-		// Transform to screen coordinates for text
-		const screenX = vertex[0] * zoom + offsetX;
-		const screenY = vertex[1] * zoom + offsetY;
-		ctx.fillStyle = 'black';
-		ctx.font = '12px Arial';
-		ctx.textAlign = 'center';
-		ctx.textBaseline = 'bottom';
-		ctx.fillText(i.toString(), screenX, screenY - 10 / zoom); // Adjust for zoom
+        // Calculate screen coordinates
+        const screenX = vertex[0] * zoom + offsetX;
+        const screenY = vertex[1] * zoom + offsetY;
 
-		// Draw gradient arrow in world coordinates, transform to screen
-		const gradX = -gradient[i][0]; // Negate for -gradient direction
-		const gradY = -gradient[i][1];
-		const magnitude = Math.sqrt(gradX * gradX + gradY * gradY) || 1e-6; // Avoid division by zero
-		const minLength = 20; // Min arrow length for normalization
-		const maxLength = 50; // Max arrow length for normalization
-		const normalizedLength = Math.max(minLength, Math.min(maxLength, magnitude * 1000)) / zoom; // Scale for zoom
+        // Draw text and arrow in screen coordinates
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transformation
 
-		const arrowStartX = vertex[0];
-		const arrowStartY = vertex[1];
-		const arrowEndX = arrowStartX + (gradX / magnitude) * normalizedLength;
-		const arrowEndY = arrowStartY + (gradY / magnitude) * normalizedLength;
+        // Draw vertex number
+        ctx.fillStyle = 'black';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(i.toString(), screenX, screenY - 10);
 
-		// Transform arrow endpoints to screen coordinates
-		const screenStartX = arrowStartX * zoom + offsetX;
-		const screenStartY = arrowStartY * zoom + offsetY;
-		const screenEndX = arrowEndX * zoom + offsetX;
-		const screenEndY = arrowEndY * zoom + offsetY;
+        // Draw gradient arrow
+        const gradX = -gradient[i][0];
+        const gradY = -gradient[i][1];
+        const magnitude = Math.sqrt(gradX * gradX + gradY * gradY) || 1e-6;
+        const screenGradX = gradX * zoom;
+        const screenGradY = gradY * zoom;
+        const screenMagnitude = Math.sqrt(screenGradX * screenGradX + screenGradY * screenGradY);
+        const arrowLength = 20; // pixels
+        const dirX = screenGradX / screenMagnitude;
+        const dirY = screenGradY / screenMagnitude;
+        ctx.strokeStyle = 'purple';
+        ctx.lineWidth = 2;
+        drawArrow(ctx, screenX, screenY, dirX, dirY, arrowLength);
 
-		ctx.strokeStyle = 'purple'; // Distinct color for gradient arrows
-		ctx.lineWidth = 2 / zoom;
-		drawArrow(
-			ctx,
-			screenStartX,
-			screenStartY,
-			(screenEndX - screenStartX) / normalizedLength,
-			(screenEndY - screenStartY) / normalizedLength,
-			normalizedLength
-		);
-	});
+        ctx.restore();
+    });
 }
 
 function drawMidpoints(ctx, edges, edgeProps) {
-	const { offsetX, offsetY, zoom } = get(canvasTransform);
+    const { offsetX, offsetY, zoom } = get(canvasTransform);
 
-	if (!edgeProps || !edgeProps.edgeMidpoints || edgeProps.edgeMidpoints.length !== edges.length) {
-		return;
-	}
+    if (!edgeProps || !edgeProps.edgeMidpoints || edgeProps.edgeMidpoints.length !== edges.length) {
+        return;
+    }
 
-	ctx.font = '10px Arial';
-	ctx.textAlign = 'center';
-	ctx.textBaseline = 'bottom';
+    edges.forEach((edge, i) => {
+        const midpoint = edgeProps.edgeMidpoints[i];
+        const length = edgeProps.edgeLengths[i];
+        const tangent = edgeProps.edgeTangents[i];
 
-	edges.forEach((edge, i) => {
-		const midpoint = edgeProps.edgeMidpoints[i];
-		const length = edgeProps.edgeLengths[i];
-		const tangent = edgeProps.edgeTangents[i];
+        if (!midpoint || !length || !tangent) return;
 
-		if (!midpoint || !length || !tangent) return;
+        // Draw midpoint circle in world coordinates
+        ctx.fillStyle = 'red';
+        ctx.beginPath();
+        ctx.arc(midpoint[0], midpoint[1], 2 / zoom, 0, 2 * Math.PI);
+        ctx.fill();
 
-		// Draw midpoint circle in world coordinates
-		ctx.fillStyle = 'red';
-		ctx.beginPath();
-		ctx.arc(midpoint[0], midpoint[1], 2 / zoom, 0, 2 * Math.PI); // World coordinates, scaled for zoom
-		ctx.fill();
+        // Calculate screen coordinates
+        const screenX = midpoint[0] * zoom + offsetX;
+        const screenY = midpoint[1] * zoom + offsetY;
 
-		// Transform to screen coordinates for text and arrows
-		const screenX = midpoint[0] * zoom + offsetX;
-		const screenY = midpoint[1] * zoom + offsetY;
+        // Draw text and arrow in screen coordinates
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transformation
 
-		ctx.fillStyle = 'blue';
-		ctx.fillText(`${i}L ${length.toFixed(6)}`, screenX, screenY - 15 / zoom); // Adjust for zoom
-		ctx.fillText(`T ${tangent.map((t) => t.toFixed(1))}`, screenX, screenY - 5 / zoom);
-		ctx.fillText(`${edge[0]}, ${edge[1]}`, screenX, screenY + 15 / zoom);
+        ctx.fillStyle = 'blue';
+        ctx.font = '10px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(`${i}L ${length.toFixed(6)}`, screenX, screenY - 15);
+        ctx.fillText(`T ${tangent.map((t) => t.toFixed(1))}`, screenX, screenY - 5);
+        ctx.fillText(`${edge[0]}, ${edge[1]}`, screenX, screenY + 15);
 
-		ctx.strokeStyle = 'green';
-		ctx.lineWidth = 1.5 / zoom;
-		drawArrow(ctx, screenX, screenY, tangent[0], tangent[1], 20 / zoom); // Adjust for zoom
-	});
+        ctx.strokeStyle = 'green';
+        ctx.lineWidth = 1.5;
+        const tangentScreenX = tangent[0] * zoom;
+        const tangentScreenY = tangent[1] * zoom;
+        const tangentMagnitude = Math.sqrt(tangentScreenX * tangentScreenX + tangentScreenY * tangentScreenY) || 1;
+        const dirX = tangentScreenX / tangentMagnitude;
+        const dirY = tangentScreenY / tangentMagnitude;
+        drawArrow(ctx, screenX, screenY, dirX, dirY, 20);
+
+        ctx.restore();
+    });
 }
 
 export function drawKernelMatrix(kernelCanvas, kernelMatrix) {
