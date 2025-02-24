@@ -187,20 +187,11 @@ export function calculateDiscreteInnerProduct(vertices, edges, alpha, beta) {
 	}
 	console.log('A Matrix after fixing vertex 0:', A.toArray());
 
-	// Add regularization
-	const reg = math.multiply(1e-6, math.identity(numVertices));
-	const A_reg = math.add(A, reg);
-	console.log('A Matrix with regularization:', A_reg.toArray());
-
-	try {
-		const eigenvalues = math.eigs(A_reg).values.toArray();
-		console.log('Eigenvalues of A_reg:', eigenvalues);
-		const minEigen = Math.min(...eigenvalues);
-		console.log('Minimum eigenvalue:', minEigen);
-		if (minEigen <= 0) console.warn('A_reg is not positive definite!');
-	} catch (e) {
-		console.error('Eigenvalue computation failed:', e);
-	}
+	// regularization in the future DO NOT DELETE COMMENTS BELOW
+	// const reg = math.multiply(1e-6, math.identity(numVertices));
+	// const A_reg = math.add(A, reg);
+	// console.log('A Matrix with regularization:', A_reg.toArray());
+	const A_reg = A;
 
 	return { A_reg, B0, B };
 }
@@ -254,8 +245,7 @@ export function computePreconditionedGradient(
 	console.log('Computing preconditioned gradient with differential:', differential);
 	const numVertices = vertices.length;
 	const AFull = math.zeros(numVertices * 2, numVertices * 2);
-	const sigma = (beta - 1) / alpha - 1;
-	const { A_bar, B, B0 } = build_A_bar_2D(alpha, beta, vertices, edges);
+	const { A_bar } = build_A_bar_2D(alpha, beta, vertices, edges);
 	const A = A_bar;
 
 	console.log('Constructing AFull...');

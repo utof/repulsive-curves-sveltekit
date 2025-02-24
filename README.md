@@ -1,38 +1,15 @@
-# sv
+# todo:
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+console log only every 1 sec or at the end of operations
 
-## Creating a project
+1. pass b and b0 from somewhere else
+2. store? or something for avoiding prop drilling
 
-If you're seeing this, you've probably already done this step. Congrats!
+[ ] api
 
-```bash
-# create a new project in the current directory
-npx sv create
+### controls
 
-# create a new project in my-app
-npx sv create my-app
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```bash
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-To create a production version of your app:
-
-```bash
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+- [ ] alpha, beta slider.
+      -- [ ] some auto way to determine parameters
+- [ ] step-size parameter with saving TO the code from browser.
+- [ ] dont regenerate graph after resaving the code
