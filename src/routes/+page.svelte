@@ -164,9 +164,9 @@
 					>Alpha (1 lt α lt ∞): <input
 						type="range"
 						id="alpha"
-						min="1.1"
+						min="1.5"
 						max="10"
-						step="0.1"
+						step="0.5"
 						bind:value={alpha}
 						on:input={updateAlphaBeta}
 					/></label
@@ -178,7 +178,7 @@
 						id="beta"
 						min={alpha + 2}
 						max={2 * alpha + 1}
-						step="0.1"
+						step="0.5"
 						bind:value={beta}
 						on:input={updateAlphaBeta}
 					/></label
