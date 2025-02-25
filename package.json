@@ -30,6 +30,7 @@
 		"vite": "^6.0.0"
 	},
 	"dependencies": {
-		"mathjs": "^14.2.1"
+		"mathjs": "^14.2.1",
+		"three": "^0.173.0"
 	}
 }

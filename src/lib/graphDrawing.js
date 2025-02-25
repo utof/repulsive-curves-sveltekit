@@ -1,76 +1,87 @@
-// src/lib/graphDrawing.js
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import * as math from 'mathjs';
-import { drawArrow } from '$lib/graphUtils';
 import { calculateDifferential } from '$lib/energyCalculations';
-import { canvasTransform, subvertices } from '$lib/stores';
+import { drawArrow } from '$lib/graphUtils';
+import { canvasTransform, subvertices, config } from '$lib/stores';
 import { get } from 'svelte/store';
 
 export function drawGraph(
-	ctx,
-	width,
-	height,
-	vertices,
-	edges,
-	edgeProps,
-	kernelMatrix,
-	alpha,
-	beta,
-	disjointPairs
+    ctx2D,
+    width,
+    height,
+    vertices,
+    edges,
+    edgeProps,
+    kernelMatrix,
+    alpha,
+    beta,
+    disjointPairs,
+    threeRenderer,
+    threeScene,
+    threeCamera,
+    threeControls
 ) {
-	const { offsetX, offsetY, zoom } = get(canvasTransform);
-	const subs = get(subvertices);
-
-	ctx.save();
-	ctx.clearRect(0, 0, width, height);
-
-	ctx.scale(zoom, zoom);
-	ctx.translate(offsetX / zoom, offsetY / zoom);
-
-	drawEdges(ctx, vertices, edges, kernelMatrix);
-	drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs);
-	drawMidpoints(ctx, edges, edgeProps);
-	drawSubvertices(ctx, subs);
-
-	ctx.restore();
+    const dim = get(config).dim;
+    if (dim === 2) {
+        drawGraph2D(ctx2D, width, height, vertices, edges, edgeProps, kernelMatrix, alpha, beta, disjointPairs);
+    } else if (dim === 3) {
+        drawGraph3D(vertices, edges, threeRenderer, threeScene, threeCamera, threeControls);
+    }
 }
 
-function drawEdges(ctx, vertices, edges, kernelMatrix) {
-	const { zoom } = get(canvasTransform);
+function drawGraph2D(ctx, width, height, vertices, edges, edgeProps, kernelMatrix, alpha, beta, disjointPairs) {
+    const { offsetX, offsetY, zoom } = get(canvasTransform);
+    const subs = get(subvertices);
 
-	if (kernelMatrix && math.isMatrix(kernelMatrix) && kernelMatrix.size()[0] === edges.length) {
-		const maxKernelValue = math.max(kernelMatrix) || 1;
+    ctx.save();
+    ctx.clearRect(0, 0, width, height);
+    ctx.scale(zoom, zoom);
+    ctx.translate(offsetX / zoom, offsetY / zoom);
 
-		edges.forEach((edge, i) => {
-			const totalKernel = edges.reduce((sum, _, j) => {
-				return i !== j ? sum + kernelMatrix.get([i, j]) : sum;
-			}, 0);
-			const avgKernel = totalKernel / (edges.length - 1 || 1);
-			const normalizedValue = avgKernel / maxKernelValue;
+    drawEdges2D(ctx, vertices, edges, kernelMatrix);
+    drawVertices2D(ctx, vertices, edges, alpha, beta, disjointPairs);
+    drawMidpoints2D(ctx, edges, edgeProps);
+    drawSubvertices2D(ctx, subs);
 
-			const blue = Math.round(255 * (1 - normalizedValue));
-			const red = Math.round(255 * normalizedValue);
-
-			ctx.strokeStyle = `rgb(${red}, 0, ${blue})`;
-			ctx.lineWidth = (1 + normalizedValue * 4) / zoom;
-
-			ctx.beginPath();
-			ctx.moveTo(vertices[edge[0]][0], vertices[edge[0]][1]);
-			ctx.lineTo(vertices[edge[1]][0], vertices[edge[1]][1]);
-			ctx.stroke();
-		});
-	} else {
-		ctx.strokeStyle = 'black';
-		ctx.lineWidth = 1 / zoom;
-		edges.forEach((edge) => {
-			ctx.beginPath();
-			ctx.moveTo(vertices[edge[0]][0], vertices[edge[0]][1]);
-			ctx.lineTo(vertices[edge[1]][0], vertices[edge[1]][1]);
-			ctx.stroke();
-		});
-	}
+    ctx.restore();
 }
 
-function drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs) {
+function drawEdges2D(ctx, vertices, edges, kernelMatrix) {
+    const { zoom } = get(canvasTransform);
+
+    if (kernelMatrix && math.isMatrix(kernelMatrix) && kernelMatrix.size()[0] === edges.length) {
+        const maxKernelValue = math.max(kernelMatrix) || 1;
+
+        edges.forEach((edge, i) => {
+            const totalKernel = edges.reduce((sum, _, j) => i !== j ? sum + kernelMatrix.get([i, j]) : sum, 0);
+            const avgKernel = totalKernel / (edges.length - 1 || 1);
+            const normalizedValue = avgKernel / maxKernelValue;
+
+            const blue = Math.round(255 * (1 - normalizedValue));
+            const red = Math.round(255 * normalizedValue);
+
+            ctx.strokeStyle = `rgb(${red}, 0, ${blue})`;
+            ctx.lineWidth = (1 + normalizedValue * 4) / zoom;
+
+            ctx.beginPath();
+            ctx.moveTo(vertices[edge[0]][0], vertices[edge[0]][1]);
+            ctx.lineTo(vertices[edge[1]][0], vertices[edge[1]][1]);
+            ctx.stroke();
+        });
+    } else {
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 1 / zoom;
+        edges.forEach(edge => {
+            ctx.beginPath();
+            ctx.moveTo(vertices[edge[0]][0], vertices[edge[0]][1]);
+            ctx.lineTo(vertices[edge[1]][0], vertices[edge[1]][1]);
+            ctx.stroke();
+        });
+    }
+}
+
+function drawVertices2D(ctx, vertices, edges, alpha, beta, disjointPairs) {
     const { offsetX, offsetY, zoom } = get(canvasTransform);
     const gradient = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
 
@@ -109,12 +120,10 @@ function drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs) {
     });
 }
 
-function drawMidpoints(ctx, edges, edgeProps) {
+function drawMidpoints2D(ctx, edges, edgeProps) {
     const { offsetX, offsetY, zoom } = get(canvasTransform);
 
-    if (!edgeProps || !edgeProps.edgeMidpoints || edgeProps.edgeMidpoints.length !== edges.length) {
-        return;
-    }
+    if (!edgeProps || !edgeProps.edgeMidpoints || edgeProps.edgeMidpoints.length !== edges.length) return;
 
     edges.forEach((edge, i) => {
         const midpoint = edgeProps.edgeMidpoints[i];
@@ -139,7 +148,7 @@ function drawMidpoints(ctx, edges, edgeProps) {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
         ctx.fillText(`${i}L ${length.toFixed(6)}`, screenX, screenY - 15);
-        ctx.fillText(`T ${tangent.map((t) => t.toFixed(1))}`, screenX, screenY - 5);
+        ctx.fillText(`T ${tangent.map(t => t.toFixed(1))}`, screenX, screenY - 5);
         ctx.fillText(`${edge[0]}, ${edge[1]}`, screenX, screenY + 15);
 
         ctx.strokeStyle = 'green';
@@ -155,83 +164,115 @@ function drawMidpoints(ctx, edges, edgeProps) {
     });
 }
 
-function drawSubvertices(ctx, subvertices) {
-	const { zoom } = get(canvasTransform);
+function drawSubvertices2D(ctx, subvertices) {
+    const { zoom } = get(canvasTransform);
 
-	ctx.fillStyle = 'black';
-	for (const subvertex of subvertices) {
-		const [x, y] = subvertex.position; // Use precomputed position from updateKernelState
-		ctx.beginPath();
-		ctx.arc(x, y, 4 / zoom, 0, 2 * Math.PI);
-		ctx.fill();
-	}
+    ctx.fillStyle = 'black';
+    for (const subvertex of subvertices) {
+        const [x, y] = subvertex.position;
+        ctx.beginPath();
+        ctx.arc(x, y, 4 / zoom, 0, 2 * Math.PI);
+        ctx.fill();
+    }
+}
+
+function drawGraph3D(vertices, edges, renderer, scene, camera, controls) {
+    while (scene.children.length > 0) {
+        scene.remove(scene.children[0]);
+    }
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    directionalLight.position.set(0, 1, 1).normalize();
+    scene.add(directionalLight);
+
+    vertices.forEach(vertex => {
+        const geometry = new THREE.SphereGeometry(5, 16, 16);
+        const material = new THREE.MeshPhongMaterial({ color: 0xffffff });
+        const sphere = new THREE.Mesh(geometry, material);
+        sphere.position.set(vertex[0], vertex[1], vertex[2]);
+        scene.add(sphere);
+    });
+
+    edges.forEach(([v1, v2]) => {
+        const material = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 5 }); // Thicker lines
+        const points = [
+            new THREE.Vector3(vertices[v1][0], vertices[v1][1], vertices[v1][2]),
+            new THREE.Vector3(vertices[v2][0], vertices[v2][1], vertices[v2][2])
+        ];
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(geometry, material);
+        scene.add(line);
+    });
+
+    renderer.render(scene, camera);
+    controls.update();
 }
 
 export function drawKernelMatrix(kernelCanvas, kernelMatrix) {
-	if (!kernelCanvas || !kernelMatrix || !math.isMatrix(kernelMatrix)) return;
+    // Existing implementation remains unchanged
+    if (!kernelCanvas || !kernelMatrix || !math.isMatrix(kernelMatrix)) return;
 
-	const ctx = kernelCanvas.getContext('2d');
-	const size = kernelMatrix.size();
-	const padding = 50;
-	const maxWidth = Math.min(window.innerWidth / 2, 800);
-	const maxContentWidth = maxWidth - padding * 2;
+    const ctx = kernelCanvas.getContext('2d');
+    const size = kernelMatrix.size();
+    const padding = 50;
+    const maxWidth = Math.min(window.innerWidth / 2, 800);
+    const maxContentWidth = maxWidth - padding * 2;
 
-	const cellSize = Math.min(
-		50,
-		Math.floor(maxContentWidth / size[1]),
-		Math.floor(maxContentWidth / size[0])
-	);
+    const cellSize = Math.min(50, Math.floor(maxContentWidth / size[1]), Math.floor(maxContentWidth / size[0]));
 
-	const canvasWidth = Math.min(maxWidth, padding * 2 + size[1] * cellSize);
-	const canvasHeight = padding * 2 + size[0] * cellSize;
+    const canvasWidth = Math.min(maxWidth, padding * 2 + size[1] * cellSize);
+    const canvasHeight = padding * 2 + size[0] * cellSize;
 
-	kernelCanvas.width = canvasWidth;
-	kernelCanvas.height = canvasHeight;
-	kernelCanvas.style.width = `${canvasWidth}px`;
-	kernelCanvas.style.height = `${canvasHeight}px`;
+    kernelCanvas.width = canvasWidth;
+    kernelCanvas.height = canvasHeight;
+    kernelCanvas.style.width = `${canvasWidth}px`;
+    kernelCanvas.style.height = `${canvasHeight}px`;
 
-	ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-	const maxVal = math.max(kernelMatrix) || 1;
+    const maxVal = math.max(kernelMatrix) || 1;
 
-	for (let i = 0; i < size[0]; i++) {
-		for (let j = 0; j < size[1]; j++) {
-			const value = kernelMatrix.get([i, j]);
-			const intensity = value / maxVal;
-			const r = Math.round(255 - intensity * 255);
-			const g = Math.round(255 - intensity * 255);
-			const b = 255;
-			const minOpacity = 0.1;
-			const opacity = minOpacity + (1 - minOpacity) * intensity;
-			ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
-			ctx.fillRect(padding + j * cellSize, padding + i * cellSize, cellSize, cellSize);
-		}
-	}
+    for (let i = 0; i < size[0]; i++) {
+        for (let j = 0; j < size[1]; j++) {
+            const value = kernelMatrix.get([i, j]);
+            const intensity = value / maxVal;
+            const r = Math.round(255 - intensity * 255);
+            const g = Math.round(255 - intensity * 255);
+            const b = 255;
+            const minOpacity = 0.1;
+            const opacity = minOpacity + (1 - minOpacity) * intensity;
+            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+            ctx.fillRect(padding + j * cellSize, padding + i * cellSize, cellSize, cellSize);
+        }
+    }
 
-	ctx.strokeStyle = 'black';
-	ctx.lineWidth = 1;
-	for (let i = 0; i <= size[0]; i++) {
-		ctx.beginPath();
-		ctx.moveTo(padding, padding + i * cellSize);
-		ctx.lineTo(padding + size[1] * cellSize, padding + i * cellSize);
-		ctx.stroke();
-	}
-	for (let j = 0; j <= size[1]; j++) {
-		ctx.beginPath();
-		ctx.moveTo(padding + j * cellSize, padding);
-		ctx.lineTo(padding + j * cellSize, padding + size[0] * cellSize);
-		ctx.stroke();
-	}
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= size[0]; i++) {
+        ctx.beginPath();
+        ctx.moveTo(padding, padding + i * cellSize);
+        ctx.lineTo(padding + size[1] * cellSize, padding + i * cellSize);
+        ctx.stroke();
+    }
+    for (let j = 0; j <= size[1]; j++) {
+        ctx.beginPath();
+        ctx.moveTo(padding + j * cellSize, padding);
+        ctx.lineTo(padding + j * cellSize, padding + size[0] * cellSize);
+        ctx.stroke();
+    }
 
-	ctx.fillStyle = 'black';
-	ctx.font = '12px Arial';
-	ctx.textAlign = 'center';
-	for (let j = 0; j < size[1]; j++) {
-		ctx.fillText(j.toString(), padding + j * cellSize + cellSize / 2, padding - 10);
-	}
+    ctx.fillStyle = 'black';
+    ctx.font = '12px Arial';
+    ctx.textAlign = 'center';
+    for (let j = 0; j < size[1]; j++) {
+        ctx.fillText(j.toString(), padding + j * cellSize + cellSize / 2, padding - 10);
+    }
 
-	ctx.textAlign = 'right';
-	for (let i = 0; i < size[0]; i++) {
-		ctx.fillText(i.toString(), padding - 5, padding + i * cellSize + cellSize / 2);
-	}
+    ctx.textAlign = 'right';
+    for (let i = 0; i < size[0]; i++) {
+        ctx.fillText(i.toString(), padding - 5, padding + i * cellSize + cellSize / 2);
+    }
 }
