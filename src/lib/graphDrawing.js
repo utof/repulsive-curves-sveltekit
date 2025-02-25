@@ -2,7 +2,7 @@
 import * as math from 'mathjs';
 import { drawArrow } from '$lib/graphUtils';
 import { calculateDifferential } from '$lib/energyCalculations';
-import { canvasTransform } from '$lib/stores';
+import { canvasTransform, subvertices } from '$lib/stores';
 import { get } from 'svelte/store';
 
 export function drawGraph(
@@ -17,22 +17,20 @@ export function drawGraph(
 	beta,
 	disjointPairs
 ) {
-	// Use get() to access store values in Svelte 5
 	const { offsetX, offsetY, zoom } = get(canvasTransform);
+	const subs = get(subvertices);
 
-	// Clear the canvas completely in screen coordinates before applying transformations
 	ctx.save();
 	ctx.clearRect(0, 0, width, height);
 
-	// Apply transformations to draw in world coordinates
 	ctx.scale(zoom, zoom);
 	ctx.translate(offsetX / zoom, offsetY / zoom);
 
 	drawEdges(ctx, vertices, edges, kernelMatrix);
 	drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs);
 	drawMidpoints(ctx, edges, edgeProps);
+	drawSubvertices(ctx, subs);
 
-	// Restore context after drawing
 	ctx.restore();
 }
 
@@ -40,7 +38,7 @@ function drawEdges(ctx, vertices, edges, kernelMatrix) {
 	const { zoom } = get(canvasTransform);
 
 	if (kernelMatrix && math.isMatrix(kernelMatrix) && kernelMatrix.size()[0] === edges.length) {
-		const maxKernelValue = math.max(kernelMatrix) || 1; // Avoid division by zero
+		const maxKernelValue = math.max(kernelMatrix) || 1;
 
 		edges.forEach((edge, i) => {
 			const totalKernel = edges.reduce((sum, _, j) => {
@@ -61,7 +59,6 @@ function drawEdges(ctx, vertices, edges, kernelMatrix) {
 			ctx.stroke();
 		});
 	} else {
-		// Fallback: Draw edges with default style
 		ctx.strokeStyle = 'black';
 		ctx.lineWidth = 1 / zoom;
 		edges.forEach((edge) => {
@@ -73,41 +70,35 @@ function drawEdges(ctx, vertices, edges, kernelMatrix) {
 	}
 }
 
-// src/lib/graphDrawing.js
 function drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs) {
     const { offsetX, offsetY, zoom } = get(canvasTransform);
     const gradient = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
 
     vertices.forEach((vertex, i) => {
-        // Draw circle in world coordinates
         ctx.beginPath();
         ctx.arc(vertex[0], vertex[1], 5 / zoom, 0, 2 * Math.PI);
         ctx.fillStyle = 'blue';
         ctx.fill();
 
-        // Calculate screen coordinates
         const screenX = vertex[0] * zoom + offsetX;
         const screenY = vertex[1] * zoom + offsetY;
 
-        // Draw text and arrow in screen coordinates
         ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transformation
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-        // Draw vertex number
         ctx.fillStyle = 'black';
         ctx.font = '12px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
         ctx.fillText(i.toString(), screenX, screenY - 10);
 
-        // Draw gradient arrow
         const gradX = -gradient[i][0];
         const gradY = -gradient[i][1];
         const magnitude = Math.sqrt(gradX * gradX + gradY * gradY) || 1e-6;
         const screenGradX = gradX * zoom;
         const screenGradY = gradY * zoom;
         const screenMagnitude = Math.sqrt(screenGradX * screenGradX + screenGradY * screenGradY);
-        const arrowLength = 20; // pixels
+        const arrowLength = 20;
         const dirX = screenGradX / screenMagnitude;
         const dirY = screenGradY / screenMagnitude;
         ctx.strokeStyle = 'purple';
@@ -132,19 +123,16 @@ function drawMidpoints(ctx, edges, edgeProps) {
 
         if (!midpoint || !length || !tangent) return;
 
-        // Draw midpoint circle in world coordinates
         ctx.fillStyle = 'red';
         ctx.beginPath();
         ctx.arc(midpoint[0], midpoint[1], 2 / zoom, 0, 2 * Math.PI);
         ctx.fill();
 
-        // Calculate screen coordinates
         const screenX = midpoint[0] * zoom + offsetX;
         const screenY = midpoint[1] * zoom + offsetY;
 
-        // Draw text and arrow in screen coordinates
         ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transformation
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
 
         ctx.fillStyle = 'blue';
         ctx.font = '10px Arial';
@@ -165,6 +153,18 @@ function drawMidpoints(ctx, edges, edgeProps) {
 
         ctx.restore();
     });
+}
+
+function drawSubvertices(ctx, subvertices) {
+	const { zoom } = get(canvasTransform);
+
+	ctx.fillStyle = 'black';
+	for (const subvertex of subvertices) {
+		const [x, y] = subvertex.position; // Use precomputed position from updateKernelState
+		ctx.beginPath();
+		ctx.arc(x, y, 4 / zoom, 0, 2 * Math.PI);
+		ctx.fill();
+	}
 }
 
 export function drawKernelMatrix(kernelCanvas, kernelMatrix) {
@@ -192,7 +192,7 @@ export function drawKernelMatrix(kernelCanvas, kernelMatrix) {
 
 	ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-	const maxVal = math.max(kernelMatrix) || 1; // Avoid division by zero
+	const maxVal = math.max(kernelMatrix) || 1;
 
 	for (let i = 0; i < size[0]; i++) {
 		for (let j = 0; j < size[1]; j++) {

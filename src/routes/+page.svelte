@@ -13,6 +13,7 @@
 	import {
 		vertices,
 		edges,
+		subvertices,
 		kernelData,
 		energyChange,
 		previousEnergy,
@@ -28,11 +29,10 @@
 	let optimizer;
 	let cleanupInteractions = () => {};
 	let isOptimizing = false;
-	let graphType = 'bipartite'; // Default to bipartite graph
-	// let graphType = 'random'; // Changed to 'random' graph type
+	let graphType = 'bipartite';
 	const width = 700;
 	const height = 700;
-	let alpha = 3; // Default values from paper recommendation
+	let alpha = 3;
 	let beta = 6;
 	const maxIterations = 1000;
 	let initialEdgeLengths = [];
@@ -48,7 +48,6 @@
 	});
 
 	function updateVisualization() {
-		// Ensure a clean redraw by triggering drawGraph
 		const updatedKernel = updateKernelState(
 			$vertices,
 			$edges,
@@ -73,21 +72,29 @@
 			$kernelData.disjointPairs
 		);
 
-		// Draw kernel matrix (no transformation needed)
 		drawKernelMatrix(kernelCanvas, updatedKernel.kernelMatrix);
 	}
 
 	function regenerateGraph() {
 		$previousEnergy = 0;
 		$energyChange = 0;
-		let newVertices, newEdges;
+		let newVertices, newEdges, newSubvertices;
 		if (graphType === 'random') {
-			({ vertices: newVertices, edges: newEdges } = generateRandomGraph(width, height));
+			({
+				vertices: newVertices,
+				edges: newEdges,
+				subvertices: newSubvertices
+			} = generateRandomGraph(width, height));
 		} else if (graphType === 'bipartite') {
-			({ vertices: newVertices, edges: newEdges } = generate2x3BipartiteGraph(width, height));
+			({
+				vertices: newVertices,
+				edges: newEdges,
+				subvertices: newSubvertices
+			} = generate2x3BipartiteGraph(width, height));
 		}
 		$vertices = newVertices;
 		$edges = newEdges;
+		$subvertices = newSubvertices;
 
 		const initialKernel = initializeKernelState($vertices, $edges, alpha, beta);
 		$kernelData = initialKernel;
@@ -109,7 +116,6 @@
 		cleanupInteractions();
 		cleanupInteractions = setupInteractions(graphCanvas, $vertices, updateVisualization);
 
-		// Reset transformations in the store
 		canvasTransform.set({
 			offsetX: 0,
 			offsetY: 0,
@@ -184,9 +190,6 @@
 			></canvas>
 		</div>
 	</div>
-	<!-- <div class="kernel-section">
-		<canvas bind:this={kernelCanvas}></canvas>
-	</div> -->
 </div>
 
 <style>
@@ -195,8 +198,7 @@
 		flex-direction: row;
 		gap: 20px;
 	}
-	.graph-section,
-	.kernel-section {
+	.graph-section {
 		flex: 1;
 	}
 </style>

@@ -5,6 +5,8 @@ import {
 	calculateDiscreteKernel,
 	calculateDiscreteEnergy
 } from '$lib/energyCalculations';
+import { generateSubvertices } from '$lib/graphUtils';
+import { subvertices } from '$lib/stores';
 
 export function initializeKernelState(vertices, edges, alpha, beta) {
 	const disjointPairs = calculateDisjointEdgePairs(edges);
@@ -18,6 +20,9 @@ export function initializeKernelState(vertices, edges, alpha, beta) {
 		disjointPairs
 	);
 	const discreteEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+	const newSubvertices = generateSubvertices(vertices, edges);
+
+	subvertices.set(newSubvertices);
 
 	return {
 		kernelMatrix,
@@ -38,6 +43,9 @@ export function updateKernelState(vertices, edges, alpha, beta, disjointPairs) {
 		disjointPairs
 	);
 	const discreteEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+	const newSubvertices = generateSubvertices(vertices, edges);
+
+	subvertices.set(newSubvertices);
 
 	return {
 		kernelMatrix,
