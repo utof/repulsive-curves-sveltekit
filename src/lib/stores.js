@@ -10,7 +10,10 @@ export const config = writable({
 	aConst: 0.1, // Armijo condition constant (0 < a_const < 0.5)
 	bConst: 0.5, // Backtracking reduction factor (0 < b_const < 1)
 	maxLineSearch: 20, // Maximum iterations for line search
-	differentialMethod: 'finiteDifference' // or 'finiteDifference' or analytical
+	differentialMethod: 'finiteDifference', // or 'finiteDifference' or analytical
+    precondStepSize: 20,
+    l2StepSize: 100000,
+    applyPerturbation: false
 });
 
 export const vertices = writable([]);

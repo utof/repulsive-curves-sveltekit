@@ -29,7 +29,7 @@
 	let cleanupInteractions = () => {};
 	let isOptimizing = false;
 	let graphType = 'bipartite'; // Default to bipartite graph
-
+	// let graphType = 'random'; // Changed to 'random' graph type
 	const width = 700;
 	const height = 700;
 	let alpha = 3; // Default values from paper recommendation

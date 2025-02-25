@@ -1,9 +1,13 @@
 thoughts:
 
 wtf even L2 is getting stuck. something is up with the gradients.
-project constraints works i guess.
 but wtf does barycenter do. i think it doesnt work.
+Remove THE LINE SEARCH
 
+# QUESTIONS:
+
+WHAT IS LINE SEARCH??
+project constraints kinda works but how does it work
 # todo:
 
 ### logic
@@ -35,3 +39,4 @@ nicer controls ui
 ### dev experience
 
 [ ] move all the controls (start stop animation, step) in the controls.svelte, not just the sliders.
+[ ] apply perturbation funciton should be in utils or something

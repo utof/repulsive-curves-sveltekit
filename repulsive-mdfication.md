@@ -1566,7 +1566,6 @@ Note that my implementation is for 2d only. Think thru and implement the needed 
 Other known issues and tasks include:
 
 Despite my attempts at implementation, even the simple 2x3 bipartite graph fails to minimize the energy, being stuck at the point of almost untangling. Figure out the issue. Even L2 gradient fails. For example a lot of times graphs (when random or 3x3 bipartite) get aligned along a long edge and then kinda get stuck there. I have disabled analytical difference because it's buggy but don't worry about it.
-Also whenever i use preconditioned in the optimizaiton.js WITH projection, it says line search failed, and doesnt even move. pls fix.
 Barycenter just teleports the graph to the top left of the canvas, doesnt seem to be doing anything.
 
 Trust the given text and codes more than the paper to avoid vision and text incompatibilities.

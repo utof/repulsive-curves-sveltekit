@@ -45,11 +45,13 @@ export function calculateEdgeProperties(vertices, edges) {
 }
 
 export function tangentPointKernel(p, q, T, alpha, beta) {
+	// Ensure inputs are properly converted to matrices
 	const p_ = math.matrix(p);
 	const q_ = math.matrix(q);
 	const T_ = math.matrix(T);
-	const epsilon = get(config).epsilonKernel; // Use config epsilon
+	const epsilon = get(config).epsilonKernel;
 
+	// Calculate the difference vector
 	const diff = math.subtract(p_, q_);
 	const diffNorm = math.norm(diff) + epsilon; // Prevent division by zero
 	const cross2D = T_.get([0]) * diff.get([1]) - T_.get([1]) * diff.get([0]); // 2D cross product (determinant)
@@ -58,17 +60,10 @@ export function tangentPointKernel(p, q, T, alpha, beta) {
 	const denominator = Math.pow(diffNorm, beta);
 	const result = numerator / denominator;
 
-	if (logging) {
-		console.log('Kernel calc:', {
-			p: p_.toArray(),
-			q: q_.toArray(),
-			T: T_.toArray(),
-			cross2D,
-			diffNorm,
-			numerator,
-			denominator,
-			result
-		});
+	// Check for NaN or Infinity
+	if (!isFinite(result)) {
+		console.warn('Invalid kernel result:', result, 'from inputs:', p, q, T, 'with cross2D:', cross2D, 'diffNorm:', diffNorm);
+		return 0;
 	}
 
 	return result;
@@ -164,7 +159,7 @@ export function calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPa
 		for (const j of disjointPairs[i]) {
 			if (i < edges.length && j < edges.length) {
 				const kernelValue = kernelMatrix.get([i, j]);
-				totalEnergy += kernelValue * edgeLengths[i] * edgeLengths[j];
+					totalEnergy += kernelValue * edgeLengths[i] * edgeLengths[j];
 			}
 		}
 	}
