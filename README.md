@@ -8,6 +8,8 @@ Remove THE LINE SEARCH
 
 WHAT IS LINE SEARCH??
 project constraints kinda works but how does it work
+
+what if find the subvertices that cause the most amount of energy (the intersecting ones) and kinda disable them to allow nonplanar graphs to not be crazy? 
 # todo:
 
 ### logic
@@ -42,7 +44,17 @@ nicer controls ui
 [ ] move all the controls (start stop animation, step) in the controls.svelte, not just the sliders.
 [ ] apply perturbation function should be in utils or something
 [ ] projectConstraints, enforceBarycenter need to be in constraint file
+
+#### generalizations 
 [ ] define general graph in graphutils to not prevent modifying all the graphs when new feature is created.
 
-[ ] is there a way to define generally subvertices, curvature of subedges etc.? Like an api/class that will have properties
-e.g. drawInfo Position, relativeness of motion, extensionness of graphs.
+[ ] define general gradient and specify specifications in other functions (precodnitioned, regular) with using the general func or smth.		           
+
+
+[ ] somehow high-levely define the check of z-coord to avoid ugly check like these all the time:
+```
+		const dz = (p2[2] !== undefined || p1[2] !== undefined) ? 
+		           ((p2[2] || 0) - (p1[2] || 0)) : undefined;
+```
+
+[ ] is there a way to define generally subvertices, curvature of subedges etc.? Like an api/class that will have properties e.g. drawInfo Position, relativeness of motion, extensionness of graphs.

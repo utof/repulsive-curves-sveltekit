@@ -1471,101 +1471,11 @@ int main(int argc, char* argv[])
 }
 
 
-
-let me remind you this important part of the paper:
-The discrete differential is then simply the partial derivatives of this energy with respect to the coordinates of all the curve vertices:
-
-$$
-d\hat{\mathcal{E}}^\alpha_\beta\big|_{\gamma} = \begin{bmatrix}
-\partial \mathcal{E}^\alpha_\beta / \partial \gamma_1 & \cdots & \partial \mathcal{E}^\alpha_\beta / \partial \gamma_{|V|}
-\end{bmatrix} \in \mathbb{R}^{3|V|}.
-$$
-
-These derivatives can be evaluated via any standard technique (*e.g.*, by hand, or using symbolic or automatic differentiation).
-
-### 5.2 Discrete Inner Product
-
-As in the smooth setting, we define our inner product matrix as a sum $A = B + B^0$ of high-order and low-order terms $B, B^0 \in \mathbb{R}^{|V| \times |V|}$ (as defined below).  For $\mathbb{R}^3$-valued functions, we also define a corresponding $3|V| \times 3|V|$ matrix
-
-$$
-\bar{A} =
-\begin{bmatrix}
-A & & \\
-& A & \\
-& & A
-\end{bmatrix}. \qquad (19)
-$$
-
-Mirroring Equation 8, the discrete (fractional) Sobolev gradient $g \in \mathbb{R}^{3|V|}$ is then defined as the solution to the matrix equation
-
-$$
-\bar{A} g = d \hat{\mathcal{E}}_\beta^\alpha. \qquad (20)
-$$
-
-### 5.2.1 Discrete Derivative Operator.
-
-For each edge \( I \in E \) we approximate the derivative \( \mathcal{D}u \) of a function \( u: M \to \mathbb{R} \) (Equation 11) via the finite difference formula \( \frac{1}{l_I}(u_{i_2} - u_{i_1})T_I \), where \( u_i \) denotes the value of \( u \) sampled at vertex \( i \). The corresponding derivative matrix \( D \in \mathbb{R}^{3|E| \times |V|} \) can be assembled from local \( 3 \times 2 \) matrices
-
-\[
-D_I = \frac{1}{l_I}
-\begin{bmatrix}
--T_I & T_I
-\end{bmatrix}.
-\]
-
-### 5.2.2 Discrete High-Order Term.
-
-We approximate the high-order part of the inner product \( \langle \! \langle B_\sigma u, v \rangle \! \rangle \) as
-
-\[
-u^T B v = \sum_{I, J \in E, I \cap J = \emptyset} w_{IJ} \langle D_I u[I] - D_J u[J], D_I v[I] - D_J v[J] \rangle, \quad (21)
-\]
-
-where the weights \( w_{IJ} \) arise from applying trapezoidal quadrature to the denominator in Equation 25:
-
-\[
-w_{IJ} := \frac{1}{4} l_I l_J \sum_{i \in I} \sum_{j \in J} \frac{1}{|\gamma_i - \gamma_j|^{2\sigma + 1}}.
-\]
-
-The entries of the corresponding Gram matrix \( B \in \mathbb{R}^{|V| \times |V|} \) are obtained by differentiating Equation 21 with respect to the entries of \( u \) and \( v \). More explicitly, starting with the zero matrix one can build \( B \) by making the following increments for all pairs of disjoint edges \( I \cap J = \emptyset \), and all pairs of values \( a, b \in \{1, 2\} \):
-
-\[
-\begin{aligned}
-B_{i_a i_b} += & (-1)^{a+b} w_{IJ} / l_I^2, & B_{i_a j_b} -= & (-1)^{a+b} w_{IJ} \langle T_I, T_J \rangle / (l_I l_J), \\
-B_{j_a j_b} += & (-1)^{a+b} w_{IJ} / l_J^2, & B_{j_a i_b} -= & (-1)^{a+b} w_{IJ} \langle T_J, T_I \rangle / (l_J l_I). 
-\end{aligned}
-\]
-
-### 5.2.3 Discrete Low-Order Term.
-
-To discretize the low-order term \( B_\sigma^0 \) (Section 4.2.3), we use a different discrete weight
-
-\[
-w_{IJ}^0 := \frac{1}{4} l_I l_J \sum_{i \in I} \sum_{j \in J} \frac{k_4^2(\gamma_i, \gamma_j, T_I)}{|\gamma_i - \gamma_j|^{2\sigma + 1}},
-\]
-
-and define a matrix \( B^0 \in \mathbb{R}^{|V| \times |V|} \), given by the relationship
-
-\[
-u^T B^0 v = \sum_{I, J \in E, I \cap J = \emptyset} w_{IJ}^0 (u_I - u_J)(v_I - v_J).
-\]
-
-Following a similar derivation as above, this matrix can be constructed via the following increments:
-
-\[
-\begin{aligned}
-B_{i_a i_b}^0 += & \frac{1}{4} w_{IJ}^0, & B_{i_a j_b}^0 -= & \frac{1}{4} w_{IJ}^0, \\
-B_{j_a i_b}^0 -= & \frac{1}{4} w_{IJ}^0, & B_{j_a j_b}^0 += & \frac{1}{4} w_{IJ}^0.
-\end{aligned}
-\]
-
 Above is a cpp implementation of the paper by someone on gh, and then mine in js.
 
-Note that my implementation is for 2d only. Think thru and implement the needed step(s) in the js implementation and svelte5 based on the paper and the cpp code. You may refactor and optimize my code as well. 
+Think thru and implement the needed step(s) in the js implementation and svelte5 based on the paper and the cpp code. You may refactor and optimize my code as well. 
 
 Other known issues and tasks include:
 
-Despite my attempts at implementation, even the simple 2x3 bipartite graph fails to minimize the energy, being stuck at the point of almost untangling. Figure out the issue. Even L2 gradient fails. For example a lot of times graphs (when random or 3x3 bipartite) get aligned along a long edge and then kinda get stuck there. I have disabled analytical difference because it's buggy but don't worry about it.
-Barycenter just teleports the graph to the top left of the canvas, doesnt seem to be doing anything.
 
 Trust the given text and codes more than the paper to avoid vision and text incompatibilities.
