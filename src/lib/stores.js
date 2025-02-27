@@ -17,6 +17,7 @@ export const config = writable({
     useSubverticesInEnergy: false, // Whether to include subvertices in energy calculations
     useLineSearch: false, // Whether to use line search for step size optimization
 	maxLineSearch: 20,
+    maxConstraintIterations: 10,
 });
 
 export const vertices = writable([]); // Supervertices
