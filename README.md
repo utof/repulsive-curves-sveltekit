@@ -44,6 +44,7 @@ nicer controls ui
 [ ] move all the controls (start stop animation, step) in the controls.svelte, not just the sliders.
 [ ] apply perturbation function should be in utils or something
 [ ] projectConstraints, enforceBarycenter need to be in constraint file
+[ ] include subvertices energies condition inside the differential, not as a sep funciton
 
 #### generalizations 
 [ ] define general graph in graphutils to not prevent modifying all the graphs when new feature is created.

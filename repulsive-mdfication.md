@@ -1479,3 +1479,12 @@ Other known issues and tasks include:
 
 
 Trust the given text and codes more than the paper to avoid vision and text incompatibilities.
+
+
+1. make a separate differential function that will include subverticies in the calculation of the discrete kernel (and therefore subvertices' disjoint edges) but so that the differential values/vectors themselves are only for the supervertices, not the sub, because we dont actually want to move the subv., only the the v, but to also allow subv to contribute to the energy. 
+2. move all the constraints to a seprate file and import it to optimization.js (return opt..js in its entirety)
+3. make an option in config to allow z-axis (because nonplanar graphs in 2d will have infinite energy otherwise) and a config option to how much shift all the verticies (and therefore subv, or maybe either - to ur dicsretion) along z-axis
+3.1. make a constraint to minimize z-axis
+3.2. constraint to never allow any vertex to have more than a specified z?
+if a function is modified return it in its entirety.
+etc. on your discretion.

@@ -1,7 +1,7 @@
 // src/lib/energyCalculations.js
 import * as math from 'mathjs';
 import { get } from 'svelte/store';
-import { config } from '$lib/stores';
+import { config, subvertices as subverticesStore } from '$lib/stores';
 
 let logging = false;
 
@@ -13,6 +13,15 @@ export function calculateEdgeProperties(vertices, edges) {
 	for (const edge of edges) {
 		const v1 = vertices[edge[0]];
 		const v2 = vertices[edge[1]];
+
+		// Add safety check to prevent undefined errors
+		if (!v1 || !v2) {
+			console.error('Invalid vertex reference:', edge, 'in vertices:', vertices);
+			edgeLengths.push(0);
+			edgeTangents.push([0, 0]);
+			edgeMidpoints.push([0, 0]);
+			continue;
+		}
 
 		const dx = v2[0] - v1[0];
 		const dy = v2[1] - v1[1];
@@ -91,7 +100,9 @@ export function calculateDisjointEdgePairs(edges) {
 			}
 		}
 	}
-	console.log('Calculated disjointPairs:', disjointPairs);
+	if (logging) {
+		console.log('Calculated disjointPairs:', disjointPairs);
+	}
 	return disjointPairs;
 }
 
@@ -166,59 +177,165 @@ export function calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPa
 	return totalEnergy / 2; // Divide by 2 because of symmetry
 }
 
-function calculateAnalyticalDifferential(vertices, edges, alpha, beta, disjointPairs) {
-    const numVertices = vertices.length;
-    const differential = Array(numVertices).fill().map(() => [0, 0]);
-    const { edgeLengths, edgeTangents } = calculateEdgeProperties(vertices, edges);
+/**
+ * Prepare combined vertices and edges that include subvertices for energy calculation
+ * @param {Array} mainVertices - Array of main vertex positions
+ * @param {Array} mainEdges - Array of main edges
+ * @param {Array} subvs - Array of subvertices
+ * @returns {Object} - Combined vertices, edges, and mapping information
+ */
+function prepareCombinedVerticesAndEdges(mainVertices, mainEdges, subvs) {
+    // Create a copy of the main vertices
+    const combinedVertices = [...mainVertices.map(v => [...v])];
+    const mainVertexCount = mainVertices.length;
+    
+    // Add subvertices to combined array first
+    const subVertexIndices = new Map(); // Maps subvertex to its index in combinedVertices
+    for (const sv of subvs) {
+        // Add subvertex position to combined vertices
+        const index = combinedVertices.length;
+        combinedVertices.push([...sv.position]); // Clone the position
+        
+        // Store subvertex index with a key that identifies both the subvertex and its edge
+        const key = `${sv.edge[0]}-${sv.edge[1]}-${sv.position[0]}-${sv.position[1]}`;
+        subVertexIndices.set(key, index);
+    }
+    
+    // Create a mapping from edge to its subvertices, sorted by position along edge
+    const edgeToSubvertices = new Map();
+    for (const sv of subvs) {
+        const edgeKey = `${sv.edge[0]}-${sv.edge[1]}`;
+        if (!edgeToSubvertices.has(edgeKey)) {
+            edgeToSubvertices.set(edgeKey, []);
+        }
+        
+        const key = `${sv.edge[0]}-${sv.edge[1]}-${sv.position[0]}-${sv.position[1]}`;
+        const index = subVertexIndices.get(key);
+        if (index !== undefined) {
+            edgeToSubvertices.get(edgeKey).push({
+                index,
+                position: sv.position,
+                key
+            });
+        }
+    }
+    
+    // Sort subvertices along each edge
+    for (const [edgeKey, svList] of edgeToSubvertices.entries()) {
+        const [v1Idx, v2Idx] = edgeKey.split('-').map(Number);
+        const v1 = mainVertices[v1Idx];
+        
+        // Sort subvertices by distance from v1
+        svList.sort((a, b) => {
+            const distA = Math.sqrt(Math.pow(a.position[0] - v1[0], 2) + Math.pow(a.position[1] - v1[1], 2));
+            const distB = Math.sqrt(Math.pow(b.position[0] - v1[0], 2) + Math.pow(b.position[1] - v1[1], 2));
+            return distA - distB;
+        });
+    }
+    
+    // Create new edge array including subvertices
+    const combinedEdges = [];
+    const originalEdgeIndices = new Map(); // Maps combined edge index to original edge index
+    
+    for (let i = 0; i < mainEdges.length; i++) {
+        const edge = mainEdges[i];
+        const edgeKey = `${edge[0]}-${edge[1]}`;
+        const subvList = edgeToSubvertices.get(edgeKey);
+        
+        if (!subvList || subvList.length === 0) {
+            // If no subvertices on this edge, keep the original edge
+            combinedEdges.push([edge[0], edge[1]]);
+            originalEdgeIndices.set(combinedEdges.length - 1, i);
+        } else {
+            // Create edges connecting v1 -> subv1 -> subv2 -> ... -> v2
+            // First edge: v1 to first subvertex
+            combinedEdges.push([edge[0], subvList[0].index]);
+            originalEdgeIndices.set(combinedEdges.length - 1, i);
+            
+            // Middle edges: between subvertices
+            for (let j = 0; j < subvList.length - 1; j++) {
+                combinedEdges.push([subvList[j].index, subvList[j+1].index]);
+                originalEdgeIndices.set(combinedEdges.length - 1, i);
+            }
+            
+            // Last edge: last subvertex to v2
+            combinedEdges.push([subvList[subvList.length - 1].index, edge[1]]);
+            originalEdgeIndices.set(combinedEdges.length - 1, i);
+        }
+    }
 
-    for (let p = 0; p < numVertices; p++) {
-        let deriv_p = [0, 0];
-        const adjacentEdges = edges.filter(([v0, v1]) => v0 === p || v1 === p);
+    if (logging) {
+        console.log('Combined vertices:', combinedVertices);
+        console.log('Combined edges:', combinedEdges);
+    }
+    
+    return {
+        combinedVertices,
+        combinedEdges,
+        mainVertexCount,
+        originalEdgeIndices
+    };
+}
 
-        for (const edgeI of adjacentEdges) {
-            const I = edges.indexOf(edgeI);
-            const i = edgeI[0] === p ? 0 : 1;
-            const i1 = edgeI[i];
-            const i2 = edgeI[(i + 1) % 2];
-            const l_I = edgeLengths[I];
-            const T_I = edgeTangents[I];
-
-            for (const J of disjointPairs[I]) {
-                const l_J = edgeLengths[J];
-                const T_J = edgeTangents[J];
-
-                for (let j = 0; j < 2; j++) {
-                    const j1 = edges[J][j];
-                    const p_i1 = vertices[i1];
-                    const p_i2 = vertices[i2];
-                    const p_j1 = vertices[j1];
-
-                    // Terms from loss_derivative.cpp adapted for 2D
-                    const cross_term = [
-                        (p_i2[0] - p_j1[0]) * T_I[1] - (p_i2[1] - p_j1[1]) * T_I[0],
-                        (p_i1[0] - p_j1[0]) * T_I[1] - (p_i1[1] - p_j1[1]) * T_I[0]
-                    ];
-                    const cross_norm = Math.sqrt(cross_term[0] * cross_term[0] + cross_term[1] * cross_term[1]);
-                    const denom_diff_i1_j1 = [p_i1[0] - p_j1[0], p_i1[1] - p_j1[1]];
-                    const denom_diff_i2_j1 = [p_i2[0] - p_j1[0], p_i2[1] - p_j1[1]];
-                    const denom_norm_i1_j1 = Math.sqrt(denom_diff_i1_j1[0] * denom_diff_i1_j1[0] + denom_diff_i1_j1[1] * denom_diff_i1_j1[1]);
-                    const denom_norm_i2_j1 = Math.sqrt(denom_diff_i2_j1[0] * denom_diff_i2_j1[0] + denom_diff_i2_j1[1] * denom_diff_i2_j1[1]);
-
-                    // Analytical derivative terms (simplified for 2D)
-                    const term1 = (1 - alpha) * Math.pow(l_I, -alpha - 1) * [p_i1[0] - p_i2[0], p_i1[1] - p_i2[1]] * Math.pow(cross_norm, alpha) * Math.pow(denom_norm_i1_j1, -beta);
-                    // Add more terms as needed from loss_derivative.cpp
-                    deriv_p[0] += 0.25 * l_J * term1[0];
-                    deriv_p[1] += 0.25 * l_J * term1[1];
-                }
+/**
+ * Calculate discrete energy including subvertices
+ */
+export function calculateDiscreteEnergyWithSubvertices(vertices, edges, alpha, beta, disjointPairs) {
+    const subvs = get(subverticesStore);
+    
+    if (!subvs || subvs.length === 0) {
+        // If no subvertices, use regular energy calculation
+        return calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+    }
+    
+    // Combine vertices and edges to include subvertices
+    const { 
+        combinedVertices, 
+        combinedEdges
+    } = prepareCombinedVerticesAndEdges(vertices, edges, subvs);
+    
+    // Calculate properties for combined graph
+    const { edgeLengths, edgeTangents } = calculateEdgeProperties(combinedVertices, combinedEdges);
+    const combinedDisjointPairs = calculateDisjointEdgePairs(combinedEdges);
+    
+    // Calculate kernel matrix for combined graph
+    const kernelMatrix = calculateDiscreteKernel(
+        combinedVertices,
+        combinedEdges,
+        edgeTangents,
+        alpha,
+        beta,
+        combinedDisjointPairs
+    );
+    
+    // Calculate energy
+    let totalEnergy = 0;
+    const numEdges = combinedEdges.length;
+    
+    for (let i = 0; i < numEdges; i++) {
+        for (const j of combinedDisjointPairs[i]) {
+            if (i < combinedEdges.length && j < combinedEdges.length) {
+                const kernelValue = kernelMatrix.get([i, j]);
+                totalEnergy += kernelValue * edgeLengths[i] * edgeLengths[j];
             }
         }
-        differential[p] = deriv_p;
     }
-    return differential;
+    
+    return totalEnergy / 2; // Divide by 2 because of symmetry
 }
+
+function calculateAnalyticalDifferential(vertices, edges, alpha, beta, disjointPairs) {
+   
+    return 'not implemented';}
 
 export function calculateDifferential(vertices, edges, alpha, beta, disjointPairs) {
     const method = get(config).differentialMethod;
+    const useSubvertices = get(config).useSubverticesInEnergy;
+    
+    if (useSubvertices) {
+        return calculateDifferentialWithSubvertices(vertices, edges, alpha, beta, disjointPairs);
+    }
+    
     if (method === 'finiteDifference') {
         return calculateDifferentialFiniteDifference(vertices, edges, alpha, beta, disjointPairs);
     } else if (method === 'analytical') {
@@ -226,6 +343,46 @@ export function calculateDifferential(vertices, edges, alpha, beta, disjointPair
     } else {
         throw new Error('Unknown method for differential calculation');
     }
+}
+
+/**
+ * Calculate the differential when including subvertices in energy calculations
+ * We calculate energy with subvertices but only compute gradients for main vertices
+ */
+function calculateDifferentialWithSubvertices(vertices, edges, alpha, beta, disjointPairs) {
+    const h = get(config).finiteDiffH;
+    const numVertices = vertices.length;
+    const differential = [];
+
+    // Calculate the original energy with subvertices included
+    const E_original = calculateDiscreteEnergyWithSubvertices(vertices, edges, alpha, beta, disjointPairs);
+
+    // For each main vertex, calculate partial derivatives
+    for (let i = 0; i < numVertices; i++) {
+        differential[i] = [0, 0];
+        for (let dim = 0; dim < 2; dim++) {
+            // Create perturbed vertices array
+            const vertices_perturbed = vertices.map((v) => [...v]);
+            vertices_perturbed[i][dim] += h;
+            
+            // Calculate energy with perturbed position
+            const E_perturbed = calculateDiscreteEnergyWithSubvertices(
+                vertices_perturbed,
+                edges,
+                alpha,
+                beta,
+                disjointPairs
+            );
+            
+            // Compute partial derivative using finite difference
+            differential[i][dim] = (E_perturbed - E_original) / h;
+        }
+    }
+    
+    if (logging) {
+        console.log('Computed differential with subvertices:', differential);
+    }
+    return differential;
 }
 
 function calculateDifferentialFiniteDifference(vertices, edges, alpha, beta, disjointPairs) {
@@ -251,7 +408,9 @@ function calculateDifferentialFiniteDifference(vertices, edges, alpha, beta, dis
             differential[i][dim] = (E_perturbed - E_original) / h;
         }
     }
-    console.log('Computed differential:', differential);
+    if (logging) {
+        console.log('Computed differential:', differential);
+    }
     return differential;
 }
 

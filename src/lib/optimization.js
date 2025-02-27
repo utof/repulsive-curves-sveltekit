@@ -2,7 +2,8 @@
 import {
     calculateDifferential,
     calculateEdgeProperties,
-    calculateDiscreteEnergy
+    calculateDiscreteEnergy,
+    calculateDiscreteEnergyWithSubvertices
 } from '$lib/energyCalculations';
 import { computePreconditionedGradient } from '$lib/innerProduct';
 import * as math from 'mathjs';
@@ -12,8 +13,8 @@ import { updateKernelState } from '$lib/graphState'; // Import to update subvert
 
 // Configuration toggles
 const usePreconditioned = false;
-const applyProjectConstraints = false;
-const applyBarycenter = true;
+const applyProjectConstraints = true;
+const applyBarycenter = false;
 
 function l2GradientDescentStep(vertices, edges, alpha, beta, disjointPairs, initialEdgeLengths) {
     const differential = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
@@ -66,11 +67,32 @@ function preconditionedGradientDescentStep(
     }
 
     const d = gradient.map(([gx, gy]) => [-gx, -gy]);
-    const d_norm = Math.sqrt(d.flat().reduce((sum, val) => sum + val * val, 0)) || 1;
-    const d_normalized = d.map(([dx, dy]) => [dx / d_norm, dy / d_norm]);
 
+    const stepSize = get(config).precondStepSize;
+    const useLineSearch = get(config).useLineSearch;
+
+    // If line search is disabled, just take a fixed step
+    if (!useLineSearch) {
+        const newVertices = vertices.map((vertex, idx) => [
+            vertex[0] + d[idx][0] * stepSize,
+            vertex[1] + d[idx][1] * stepSize
+        ]);
+        
+        let constrainedVertices = [...newVertices];
+        if (applyProjectConstraints) {
+            constrainedVertices = projectConstraints(constrainedVertices, edges, initialEdgeLengths);
+        }
+        
+        if (applyBarycenter) {
+            enforceBarycenter(constrainedVertices);
+        }
+        
+        return constrainedVertices;
+    }
+
+    // Line search is enabled, so we perform backtracking line search
     const differentialFlat = differential.flat();
-    const dFlat = d_normalized.flat();
+    const dFlat = d.flat();
     const slope = math.dot(differentialFlat, dFlat);
     
     const E_old = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
@@ -79,13 +101,12 @@ function preconditionedGradientDescentStep(
     const b_const = get(config).bConst;
     const max_line_search = get(config).maxLineSearch;
     let t = get(config).tauInitial;
-    const stepSize = get(config).precondStepSize;
 
     let vertices_new = [...vertices];
     for (let i = 0; i < max_line_search; i++) {
         vertices_new = vertices.map((vertex, idx) => [
-            vertex[0] + t * d_normalized[idx][0] * stepSize,
-            vertex[1] + t * d_normalized[idx][1] * stepSize
+            vertex[0] + t * d[idx][0] * stepSize,
+            vertex[1] + t * d[idx][1] * stepSize
         ]);
         
         if (applyProjectConstraints) {

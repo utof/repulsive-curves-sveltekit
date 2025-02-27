@@ -5,16 +5,18 @@ export const config = writable({
 	epsilonStability: 1e-7,
 	epsilonKernel: 1e-6,
 	finiteDiffH: 1e-4,
-	constraintTolerance: 1e-7,
 	tauInitial: 1.0,
 	aConst: 0.1,
 	bConst: 0.5,
-	maxLineSearch: 20,
+	constraintTolerance: 1e-2,
 	differentialMethod: 'finiteDifference',
-    precondStepSize: 20,
+    precondStepSize: 0.1,
     l2StepSize: 100000,
-    applyPerturbation: false,
-    subvertexGap: 50 // New config: desired gap distance between subvertices (pixels)
+    applyPerturbation: true,
+    subvertexGap: 50, // Desired gap distance between subvertices (pixels)
+    useSubverticesInEnergy: false, // Whether to include subvertices in energy calculations
+    useLineSearch: false, // Whether to use line search for step size optimization
+	maxLineSearch: 20,
 });
 
 export const vertices = writable([]); // Supervertices

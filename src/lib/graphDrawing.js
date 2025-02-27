@@ -2,7 +2,7 @@
 import * as math from 'mathjs';
 import { drawArrow } from '$lib/graphUtils';
 import { calculateDifferential } from '$lib/energyCalculations';
-import { canvasTransform, subvertices } from '$lib/stores';
+import { canvasTransform, subvertices, config } from '$lib/stores';
 import { get } from 'svelte/store';
 
 export function drawGraph(
@@ -19,6 +19,7 @@ export function drawGraph(
 ) {
 	const { offsetX, offsetY, zoom } = get(canvasTransform);
 	const subs = get(subvertices);
+    const useSubverticesInEnergy = get(config).useSubverticesInEnergy;
 
 	ctx.save();
 	ctx.clearRect(0, 0, width, height);
@@ -29,7 +30,20 @@ export function drawGraph(
 	drawEdges(ctx, vertices, edges, kernelMatrix);
 	drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs);
 	drawMidpoints(ctx, edges, edgeProps);
-	drawSubvertices(ctx, subs);
+	drawSubvertices(ctx, subs, useSubverticesInEnergy);
+    
+    // Draw energy inclusion status
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform for text
+    ctx.font = '14px Arial';
+    ctx.fillStyle = 'black';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(
+        `Energy includes ${useSubverticesInEnergy ? 'both vertices and subvertices' : 'only vertices'}`, 
+        10, 10
+    );
+    ctx.restore();
 
 	ctx.restore();
 }
@@ -155,17 +169,30 @@ function drawMidpoints(ctx, edges, edgeProps) {
     });
 }
 
-function drawSubvertices(ctx, subvertices) {
+function drawSubvertices(ctx, subvertices, useInEnergy) {
 	const { zoom } = get(canvasTransform);
 
-	ctx.fillStyle = 'black';
 	for (const subvertex of subvertices) {
-		const [x, y] = subvertex.position; // Use precomputed position from updateKernelState
+		const [x, y] = subvertex.position;
+        
+        // Use different colors for subvertices based on whether they're included in energy
+        ctx.fillStyle = useInEnergy ? 'purple' : 'black';
+        ctx.strokeStyle = useInEnergy ? 'blue' : 'black';
+        
 		ctx.beginPath();
 		ctx.arc(x, y, 4 / zoom, 0, 2 * Math.PI);
 		ctx.fill();
+        
+        if (useInEnergy) {
+            // Add a halo around subvertices to indicate they're included in energy
+            ctx.lineWidth = 1 / zoom;
+            ctx.beginPath();
+            ctx.arc(x, y, 7 / zoom, 0, 2 * Math.PI);
+            ctx.stroke();
+        }
 	}
 }
+
 
 export function drawKernelMatrix(kernelCanvas, kernelMatrix) {
 	if (!kernelCanvas || !kernelMatrix || !math.isMatrix(kernelMatrix)) return;
