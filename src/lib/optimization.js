@@ -11,10 +11,13 @@ import { get } from 'svelte/store';
 import { config } from '$lib/stores';
 import { updateKernelState } from '$lib/graphState'; // Import to update subvertices
 
+// Import only the constraints we need
+import { projectConstraints, enforceBarycenter } from '$lib/constraints';
+
 // Configuration toggles
-const usePreconditioned = false;
-const applyProjectConstraints = true;
-const applyBarycenter = false;
+const usePreconditioned = true;
+const useEdgeLengthConstraint = false;  // Only apply edge length constraint
+const useBarycenterConstraint = false; // Don't use barycenter constraint
 
 function l2GradientDescentStep(vertices, edges, alpha, beta, disjointPairs, initialEdgeLengths) {
     const differential = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
@@ -28,12 +31,12 @@ function l2GradientDescentStep(vertices, edges, alpha, beta, disjointPairs, init
     ]);
 
     let constrainedVertices = [...newVertices];
-    if (applyProjectConstraints) {
+    if (useEdgeLengthConstraint) {
         constrainedVertices = projectConstraints(constrainedVertices, edges, initialEdgeLengths);
     }
     
-    if (applyBarycenter) {
-        enforceBarycenter(constrainedVertices);
+    if (useBarycenterConstraint) {
+        constrainedVertices = enforceBarycenter(constrainedVertices);
     }
 
     return constrainedVertices;
@@ -79,12 +82,12 @@ function preconditionedGradientDescentStep(
         ]);
         
         let constrainedVertices = [...newVertices];
-        if (applyProjectConstraints) {
+        if (useEdgeLengthConstraint) {
             constrainedVertices = projectConstraints(constrainedVertices, edges, initialEdgeLengths);
         }
         
-        if (applyBarycenter) {
-            enforceBarycenter(constrainedVertices);
+        if (useBarycenterConstraint) {
+            constrainedVertices = enforceBarycenter(constrainedVertices);
         }
         
         return constrainedVertices;
@@ -109,12 +112,12 @@ function preconditionedGradientDescentStep(
             vertex[1] + t * d[idx][1] * stepSize
         ]);
         
-        if (applyProjectConstraints) {
+        if (useEdgeLengthConstraint) {
             vertices_new = projectConstraints(vertices_new, edges, initialEdgeLengths);
         }
         
-        if (applyBarycenter) {
-            enforceBarycenter(vertices_new);
+        if (useBarycenterConstraint) {
+            vertices_new = enforceBarycenter(vertices_new);
         }
         
         const E_new = calculateDiscreteEnergy(vertices_new, edges, alpha, beta, disjointPairs);
@@ -129,92 +132,6 @@ function preconditionedGradientDescentStep(
 
     console.warn('Line search did not converge, using smallest step size');
     return vertices_new;
-}
-
-function projectConstraints(
-    vertices,
-    edges,
-    initialEdgeLengths,
-    maxIterations = get(config).maxConstraintIterations,
-    tolerance = get(config).constraintTolerance
-) {
-    const projectedVertices = vertices.map(v => [...v]);
-    
-    for (let iter = 0; iter < maxIterations; iter++) {
-        let maxError = 0;
-        
-        for (let i = 0; i < edges.length; i++) {
-            const [v1Idx, v2Idx] = edges[i];
-            const v1 = projectedVertices[v1Idx];
-            const v2 = projectedVertices[v2Idx];
-            
-            const dx = v2[0] - v1[0];
-            const dy = v2[1] - v1[1];
-            const currentLength = Math.sqrt(dx * dx + dy * dy) + get(config).epsilonStability;
-
-            const targetLength = initialEdgeLengths[i];
-            const error = (currentLength - targetLength) / targetLength;
-            
-            maxError = Math.max(maxError, Math.abs(error));
-            
-            if (Math.abs(error) > tolerance) {
-                const correction = error / 2;
-                const scaleFactor = 1 - correction;
-                
-                const midX = (v1[0] + v2[0]) / 2;
-                const midY = (v1[1] + v2[1]) / 2;
-                
-                const halfDx = dx / 2;
-                const halfDy = dy / 2;
-                
-                projectedVertices[v1Idx][0] = midX - halfDx * scaleFactor;
-                projectedVertices[v1Idx][1] = midY - halfDy * scaleFactor;
-                projectedVertices[v2Idx][0] = midX + halfDx * scaleFactor;
-                projectedVertices[v2Idx][1] = midY + halfDy * scaleFactor;
-            }
-        }
-        
-        if (maxError < tolerance) {
-            console.log(`Constraint projection converged after ${iter + 1} iterations`);
-            break;
-        }
-    }
-    
-    return projectedVertices;
-}
-
-function enforceBarycenter(vertices, options = {}) {
-    const {
-        targetBarycenter = null,
-        centerAtOrigin = false
-    } = options;
-    
-    const currentBarycenter = [0, 0];
-    const n = vertices.length;
-    
-    for (const vertex of vertices) {
-        currentBarycenter[0] += vertex[0] / n;
-        currentBarycenter[1] += vertex[1] / n;
-    }
-    
-    let target;
-    if (centerAtOrigin) {
-        target = [0, 0];
-    } else if (targetBarycenter) {
-        target = targetBarycenter;
-    } else {
-        target = currentBarycenter;
-    }
-    
-    const dx = target[0] - currentBarycenter[0];
-    const dy = target[1] - currentBarycenter[1];
-    
-    for (const vertex of vertices) {
-        vertex[0] += dx;
-        vertex[1] += dy;
-    }
-    
-    return vertices;
 }
 
 export function gradientDescentStep(
