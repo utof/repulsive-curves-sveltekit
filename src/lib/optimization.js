@@ -23,15 +23,12 @@ const GRADIENT_METHODS = {
     PRECONDITIONED: 'preconditioned'
 };
 
-// Default optimization settings
+// Default optimization settings - simplified to only include barycenter constraint
 let optimizationConfig = {
     gradientMethod: GRADIENT_METHODS.PRECONDITIONED,
     constraints: {
-        maintainEdgeLengths: true,    // Keep individual edge lengths constant
-        totalLength: false,           // Control total curve length 
-        targetTotalLength: null,      // Target length value (null = use initial)
         barycenter: true,            // Fix curve barycenter
-        barycenterTarget: [100, 100]      // Target barycenter position
+        barycenterTarget: [300, 300]  // Target barycenter position
     }
 };
 
@@ -104,7 +101,6 @@ function takeFixedStep(vertices, direction, stepSize) {
  * @param {Array} disjointPairs - Disjoint edge pairs
  * @param {Object} lineSearchSettings - Line search settings
  * @param {Object} constraints - Constraints configuration
- * @param {Object} additionalData - Additional data for constraints
  * @returns {Array} - New vertex positions
  */
 function performLineSearch(
@@ -116,8 +112,7 @@ function performLineSearch(
     beta, 
     disjointPairs, 
     lineSearchSettings, 
-    constraints, 
-    additionalData
+    constraints
 ) {
     const directionFlat = direction.flat();
     const differentialFlat = differential.flat();
@@ -133,8 +128,8 @@ function performLineSearch(
         // Take step
         const stepVertices = takeFixedStep(vertices, direction, t);
         
-        // Apply constraints
-        newVertices = applyConstraints(stepVertices, edges, constraints, additionalData);
+        // Apply barycenter constraint
+        newVertices = applyConstraints(stepVertices, edges, constraints);
         
         // Check if step is acceptable
         const newEnergy = calculateDiscreteEnergy(newVertices, edges, alpha, beta, disjointPairs);
@@ -158,10 +153,9 @@ function performLineSearch(
  * @param {number} alpha - Energy parameter
  * @param {number} beta - Energy parameter
  * @param {Array} disjointPairs - Disjoint edge pairs
- * @param {Array} initialEdgeLengths - Initial edge lengths
  * @returns {Array} - New vertex positions
  */
-function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs, initialEdgeLengths) {
+function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
     // Get configuration
     const useLineSearch = get(config).useLineSearch;
     const constraints = optimizationConfig.constraints;
@@ -176,7 +170,7 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs, initia
         disjointPairs
     );
     
-    // 2. Project gradient onto constraint tangent space
+    // 2. Project gradient onto constraint tangent space (Section 5.3.1 of the paper)
     const projectedDirection = projectGradientOntoConstraints(
         direction, 
         vertices, 
@@ -184,14 +178,7 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs, initia
         constraints
     );
     
-    // 3. Additional data for constraint application
-    const additionalData = { 
-        initialEdgeLengths,
-        alpha,
-        beta
-    };
-    
-    // 4. Take step (either fixed or with line search)
+    // 3. Take step (either fixed or with line search)
     if (useLineSearch) {
         const lineSearchSettings = {
             initialStepSize: get(config).tauInitial,
@@ -209,8 +196,7 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs, initia
             beta, 
             disjointPairs,
             lineSearchSettings,
-            constraints,
-            additionalData
+            constraints
         );
     } else {
         // Fixed step size based on gradient method
@@ -219,7 +205,9 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs, initia
             : get(config).l2StepSize;
             
         const newVertices = takeFixedStep(vertices, projectedDirection, stepSize);
-        return applyConstraints(newVertices, edges, constraints, additionalData);
+        
+        // Apply barycenter constraint (Section 5.3.2 of the paper)
+        return applyConstraints(newVertices, edges, constraints);
     }
 }
 
@@ -233,17 +221,9 @@ export function createOptimizer(
     beta,
     disjointPairs,
     maxIterations,
-    onUpdate,
-    initialEdgeLengths
+    onUpdate
 ) {
     if (typeof onUpdate !== 'function') throw new Error('onUpdate must be a function');
-
-    // Initialize target length if using length constraint
-    if (optimizationConfig.constraints.totalLength && !optimizationConfig.constraints.targetTotalLength) {
-        const totalLength = initialEdgeLengths.reduce((sum, length) => sum + length, 0);
-        optimizationConfig.constraints.targetTotalLength = totalLength;
-        console.log(`Initialized target total length: ${totalLength}`);
-    }
 
     let currentIteration = 0;
     let intervalId = null;
@@ -263,8 +243,7 @@ export function createOptimizer(
                     edges,
                     alpha,
                     beta,
-                    disjointPairs,
-                    initialEdgeLengths
+                    disjointPairs
                 );
                 vertices.forEach((v, i) => {
                     v[0] = newVertices[i][0];
