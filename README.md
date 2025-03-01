@@ -12,6 +12,10 @@ project constraints kinda works but how does it work
 what if find the subvertices that cause the most amount of energy (the intersecting ones) and kinda disable them to allow nonplanar graphs to not be crazy? 
 # todo:
 
+## plugin system
+
+[ ] ability to define a constraint
+
 ### logic
 
 [ ] fix analytical by giving only cpp + js files. upd 2/25/25 what??

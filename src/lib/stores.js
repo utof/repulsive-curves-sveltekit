@@ -8,12 +8,12 @@ export const config = writable({
 	tauInitial: 1.0,
 	aConst: 0.1,
 	bConst: 0.5,
-	constraintTolerance: 1e-2,
+	constraintTolerance: 1e-4,
 	differentialMethod: 'finiteDifference',
-    precondStepSize: 0.1,
+    precondStepSize: 0.5,
     l2StepSize: 100000,
-    applyPerturbation: true,
-    subvertexGap: 50, // Desired gap distance between subvertices (pixels)
+    applyPerturbation: false,
+    subvertexGap: 100, // Desired gap distance between subvertices (pixels)
     useSubverticesInEnergy: false, // Whether to include subvertices in energy calculations
     useLineSearch: false, // Whether to use line search for step size optimization
 	maxLineSearch: 20,
