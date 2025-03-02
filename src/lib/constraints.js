@@ -5,165 +5,120 @@ import * as math from 'mathjs';
 import { calculateEdgeProperties } from './energyCalculations';
 
 /**
- * Projects vertices to maintain original edge lengths
- * Simple but robust approach that directly scales edges toward target lengths
- * @param {Array} vertices - Vertex positions
- * @param {Array} edges - Edge connections
- * @param {Array} initialEdgeLengths - Original edge lengths to maintain
- * @param {Number} maxIterations - Maximum projection iterations
- * @param {Number} tolerance - Error tolerance for projection
- * @returns {Array} - Projected vertex positions
- */
-export function projectConstraints(
-    vertices,
-    edges,
-    initialEdgeLengths,
-    maxIterations = get(config).maxConstraintIterations || 10,
-    tolerance = get(config).constraintTolerance || 1e-2
-) {
-    const projectedVertices = vertices.map(v => [...v]);
-    
-    for (let iter = 0; iter < maxIterations; iter++) {
-        let maxError = 0;
-        
-        for (let i = 0; i < edges.length; i++) {
-            const [v1Idx, v2Idx] = edges[i];
-            const v1 = projectedVertices[v1Idx];
-            const v2 = projectedVertices[v2Idx];
-            
-            const dx = v2[0] - v1[0];
-            const dy = v2[1] - v1[1];
-            const currentLength = Math.sqrt(dx * dx + dy * dy);
-            const targetLength = initialEdgeLengths[i];
-            
-            if (currentLength < 1e-8) continue; // Skip degenerate edges
-            
-            const error = Math.abs(currentLength - targetLength) / targetLength;
-            maxError = Math.max(maxError, error);
-            
-            // Scale edge to target length
-            if (error > tolerance) {
-                const scale = targetLength / currentLength;
-                const midX = (v1[0] + v2[0]) / 2;
-                const midY = (v1[1] + v2[1]) / 2;
-                
-                // Scale from midpoint
-                projectedVertices[v1Idx][0] = midX - (dx / 2) * scale;
-                projectedVertices[v1Idx][1] = midY - (dy / 2) * scale;
-                projectedVertices[v2Idx][0] = midX + (dx / 2) * scale;
-                projectedVertices[v2Idx][1] = midY + (dy / 2) * scale;
-            }
-        }
-        
-        if (maxError < tolerance) {
-            console.log(`Length constraint satisfied after ${iter + 1} iterations with error ${maxError}`);
-            break;
-        }
-    }
-    
-    return projectedVertices;
-}
-
-/**
  * Enforces barycenter constraint on vertices
+ * 
+ * According to the paper, the barycenter constraint is defined as:
+ * Φ_barycenter(γ) := ∑_{I∈E} ℓ_I (x_I - x₀) = 0
+ * 
+ * Where:
+ * - γ is the curve (vertices)
+ * - E is the set of edges
+ * - ℓ_I is the length of edge I
+ * - x_I is the midpoint of edge I
+ * - x₀ is the target barycenter position
+ * 
+ * This constraint ensures that the weighted average of edge midpoints 
+ * (weighted by edge length) stays at the specified target position x₀.
+ *
  * @param {Array} vertices - Vertex positions
  * @param {Array} edges - Edge connections
  * @param {Object} options - Barycenter options
  * @returns {Array} - Vertices with enforced barycenter
  */
 export function enforceBarycenter(vertices, edges, options = {}) {
-    const {
-        targetBarycenter = [0, 0],
-        weighted = true
-    } = options;
-    
-    const projectedVertices = vertices.map(v => [...v]);
-    
-    // Calculate current barycenter
-    let currentBarycenter = [0, 0];
-    let totalWeight = 0;
-    
-    if (weighted) {
-        // Use edge-length-weighted barycenter (as in paper)
+    try {
+        console.log("Enforcing barycenter constraint");
+        
+        const {
+            targetBarycenter = [0, 0],
+            weighted = true
+        } = options;
+        
+        // Make a copy of vertices to avoid mutating the original
+        const projectedVertices = vertices.map(v => [...v]);
+        
+        // Calculate edge properties - lengths and midpoints
         const { edgeLengths, edgeMidpoints } = calculateEdgeProperties(projectedVertices, edges);
         
-        for (let i = 0; i < edges.length; i++) {
-            const weight = edgeLengths[i];
-            currentBarycenter[0] += edgeMidpoints[i][0] * weight;
-            currentBarycenter[1] += edgeMidpoints[i][1] * weight;
-            totalWeight += weight;
+        if (!edgeLengths || !edgeMidpoints) {
+            console.error("Failed to calculate edge properties", { edgeLengths, edgeMidpoints });
+            return projectedVertices;
         }
-    } else {
-        // Use simple vertex average
-        for (const v of projectedVertices) {
-            currentBarycenter[0] += v[0];
-            currentBarycenter[1] += v[1];
+        
+        // Current barycenter calculation
+        let currentBarycenter = [0, 0];
+        let totalWeight = 0;
+        
+        if (weighted) {
+            // Use edge-length-weighted barycenter as defined in the paper:
+            // Barycenter = ∑_{I∈E} ℓ_I × x_I / ∑_{I∈E} ℓ_I
+            for (let i = 0; i < edges.length; i++) {
+                const weight = edgeLengths[i];
+                
+                if (weight <= 0 || !isFinite(weight)) {
+                    console.warn(`Invalid edge length for edge ${i}: ${weight}`);
+                    continue;
+                }
+                
+                if (!edgeMidpoints[i] || edgeMidpoints[i].some(v => !isFinite(v))) {
+                    console.warn(`Invalid midpoint for edge ${i}: ${edgeMidpoints[i]}`);
+                    continue;
+                }
+                
+                currentBarycenter[0] += edgeMidpoints[i][0] * weight;
+                currentBarycenter[1] += edgeMidpoints[i][1] * weight;
+                totalWeight += weight;
+            }
+        } else {
+            // Alternative: Use simple vertex average (not from the paper)
+            for (const v of projectedVertices) {
+                if (!v || v.some(coord => !isFinite(coord))) {
+                    console.warn("Skipping invalid vertex:", v);
+                    continue;
+                }
+                currentBarycenter[0] += v[0];
+                currentBarycenter[1] += v[1];
+            }
+            totalWeight = projectedVertices.length;
         }
-        totalWeight = projectedVertices.length;
-    }
-    
-    if (totalWeight > 0) {
+        
+        if (totalWeight <= 0) {
+            console.error("Total weight is zero or negative, cannot enforce barycenter", { totalWeight });
+            return projectedVertices;
+        }
+        
         currentBarycenter[0] /= totalWeight;
         currentBarycenter[1] /= totalWeight;
+        
+        // Calculate translation needed
+        const dx = targetBarycenter[0] - currentBarycenter[0];
+        const dy = targetBarycenter[1] - currentBarycenter[1];
+        
+        if (!isFinite(dx) || !isFinite(dy)) {
+            console.error("Invalid translation vector", { dx, dy });
+            return projectedVertices;
+        }
+        
+        console.log(`Barycenter translation: (${dx.toFixed(4)}, ${dy.toFixed(4)})`);
+        
+        // Apply translation to all vertices
+        for (let i = 0; i < projectedVertices.length; i++) {
+            projectedVertices[i][0] += dx;
+            projectedVertices[i][1] += dy;
+        }
+        
+        return projectedVertices;
+    } catch (error) {
+        console.error("Error in enforceBarycenter:", error);
+        // Return the original vertices if there's an error
+        return vertices.map(v => [...v]);
     }
-    
-    // Calculate translation needed
-    const dx = targetBarycenter[0] - currentBarycenter[0];
-    const dy = targetBarycenter[1] - currentBarycenter[1];
-    
-    // Apply translation to all vertices
-    for (let i = 0; i < projectedVertices.length; i++) {
-        projectedVertices[i][0] += dx;
-        projectedVertices[i][1] += dy;
-    }
-    
-    return projectedVertices;
 }
 
 /**
- * Applies total length constraint by uniformly scaling the curve
- * @param {Array} vertices - Vertex positions 
- * @param {Array} edges - Edge connections
- * @param {Number} targetLength - Target total curve length
- * @returns {Array} - Vertices with scaled total length
- */
-export function enforceTotalLength(vertices, edges, targetLength) {
-    const projectedVertices = vertices.map(v => [...v]);
-    
-    // Calculate curve centroid to scale from
-    const centroid = [0, 0];
-    for (const v of projectedVertices) {
-        centroid[0] += v[0];
-        centroid[1] += v[1];
-    }
-    centroid[0] /= projectedVertices.length;
-    centroid[1] /= projectedVertices.length;
-    
-    // Calculate current total length
-    let currentLength = 0;
-    for (const edge of edges) {
-        const v1 = projectedVertices[edge[0]];
-        const v2 = projectedVertices[edge[1]];
-        const dx = v2[0] - v1[0];
-        const dy = v2[1] - v1[1];
-        currentLength += Math.sqrt(dx*dx + dy*dy);
-    }
-    
-    // Calculate scale factor
-    if (currentLength < 1e-8) return projectedVertices; // Avoid division by zero
-    const scale = targetLength / currentLength;
-    
-    // Apply uniform scaling from centroid
-    for (let i = 0; i < projectedVertices.length; i++) {
-        projectedVertices[i][0] = centroid[0] + (projectedVertices[i][0] - centroid[0]) * scale;
-        projectedVertices[i][1] = centroid[1] + (projectedVertices[i][1] - centroid[1]) * scale;
-    }
-    
-    return projectedVertices;
-}
-
-/**
- * Applies multiple constraints in sequence
+ * Applies constraints in sequence
+ * Currently only the barycenter constraint is implemented
+ * 
  * @param {Array} vertices - Vertex positions
  * @param {Array} edges - Edge connections
  * @param {Object} constraints - Constraint configuration
@@ -171,31 +126,11 @@ export function enforceTotalLength(vertices, edges, targetLength) {
  * @returns {Array} - Vertices after applying all constraints
  */
 export function applyConstraints(vertices, edges, constraints, additionalData = {}) {
-    const { initialEdgeLengths = null } = additionalData;
     let result = vertices.map(v => [...v]);
     
-    // Apply constraints in a specific order for stability
-    
-    // 1. First, maintain edge lengths (if enabled)
-    if (constraints.maintainEdgeLengths && initialEdgeLengths) {
-        console.log("Applying edge length preservation");
-        result = projectConstraints(result, edges, initialEdgeLengths);
-    }
-    
-    // 2. Then enforce total length (if enabled)
-    if (constraints.totalLength) {
-        const targetLength = constraints.targetTotalLength || 
-            (initialEdgeLengths ? initialEdgeLengths.reduce((a, b) => a + b, 0) : null);
-        
-        if (targetLength) {
-            console.log(`Applying total length constraint: ${targetLength}`);
-            result = enforceTotalLength(result, edges, targetLength);
-        }
-    }
-    
-    // 3. Finally, enforce barycenter (if enabled)
+    // Apply barycenter constraint if enabled
     if (constraints.barycenter) {
-        console.log(`Applying barycenter constraint: ${constraints.barycenterTarget}`);
+        console.log(`Applying barycenter constraint: ${JSON.stringify(constraints.barycenterTarget)}`);
         result = enforceBarycenter(result, edges, {
             targetBarycenter: constraints.barycenterTarget || [0, 0],
             weighted: true
@@ -206,7 +141,14 @@ export function applyConstraints(vertices, edges, constraints, additionalData = 
 }
 
 /**
- * Projects gradient onto the tangent space of active constraints
+ * Projects gradient onto the tangent space of the barycenter constraint
+ * 
+ * Section 5.3.1 in the paper describes this as finding a descent direction
+ * that is tangent to the constraint set.
+ * 
+ * For the barycenter constraint, this means removing any component of the 
+ * gradient that would change the barycenter.
+ *
  * @param {Array} gradient - Gradient to project
  * @param {Array} vertices - Current vertex positions
  * @param {Array} edges - Edge connections
@@ -214,26 +156,51 @@ export function applyConstraints(vertices, edges, constraints, additionalData = 
  * @returns {Array} - Projected gradient
  */
 export function projectGradientOntoConstraints(gradient, vertices, edges, constraints) {
-    // For simplicity, we'll just zero out components
-    // that would violate important constraints
-    
-    let projectedGradient = gradient.map(g => [...g]);
-    
-    // If barycenter constraint is active, remove translation component
-    if (constraints.barycenter) {
+    try {
+        // If no barycenter constraint, return the original gradient
+        if (!constraints.barycenter) {
+            return gradient.map(g => [...g]);
+        }
+        
+        console.log("Projecting gradient onto barycenter constraint tangent space");
+        
+        // Make a copy of the gradient
+        let projectedGradient = gradient.map(g => [...g]);
+        
+        // For barycenter constraint, we need to remove the translation component
         // Calculate average gradient (translation component)
         const avgGradient = [0, 0];
+        let validGradientCount = 0;
+        
         for (const g of projectedGradient) {
-            avgGradient[0] += g[0] / projectedGradient.length;
-            avgGradient[1] += g[1] / projectedGradient.length;
+            if (!g || g.some(v => !isFinite(v))) {
+                console.warn("Skipping invalid gradient component:", g);
+                continue;
+            }
+            avgGradient[0] += g[0];
+            avgGradient[1] += g[1];
+            validGradientCount++;
         }
+        
+        if (validGradientCount === 0) {
+            console.error("No valid gradient components found");
+            return gradient.map(g => [...g]); // Return original gradient
+        }
+        
+        avgGradient[0] /= validGradientCount;
+        avgGradient[1] /= validGradientCount;
+        
+        console.log(`Translation component to remove: (${avgGradient[0].toFixed(6)}, ${avgGradient[1].toFixed(6)})`);
         
         // Subtract translation component from all gradients
         for (let i = 0; i < projectedGradient.length; i++) {
             projectedGradient[i][0] -= avgGradient[0];
             projectedGradient[i][1] -= avgGradient[1];
         }
+        
+        return projectedGradient;
+    } catch (error) {
+        console.error("Error in projectGradientOntoConstraints:", error);
+        return gradient.map(g => [...g]); // Return original gradient on error
     }
-    
-    return projectedGradient;
 }
