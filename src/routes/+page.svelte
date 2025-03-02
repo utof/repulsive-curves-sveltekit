@@ -19,8 +19,10 @@
 		previousEnergy,
 		discreteEnergy,
 		config,
-		canvasTransform
+		canvasTransform,
+		initialTotalLength
 	} from '$lib/stores';
+	import { calculateTotalLength } from '$lib/constraints';
 	import { get } from 'svelte/store';
 
 	let graphCanvas;
@@ -36,6 +38,7 @@
 	let beta = 6;
 	const maxIterations = 1000;
 	let initialEdgeLengths = [];
+	let controlsComponent;
 
 	onMount(() => {
 		graphCtx = graphCanvas.getContext('2d');
@@ -46,6 +49,12 @@
 		if (optimizer) optimizer.stop();
 		cleanupInteractions();
 	});
+
+	function handleAlphaBetaChange(event) {
+		alpha = event.detail.alpha;
+		beta = event.detail.beta;
+		updateAlphaBeta();
+	}
 
 	function updateVisualization() {
 		const updatedKernel = updateKernelState(
@@ -102,6 +111,11 @@
 
 		initialEdgeLengths = initialKernel.edgeProps.edgeLengths;
 
+		// Calculate and store the initial total curve length for percentage-based constraints
+		const initTotalLength = calculateTotalLength($vertices, $edges);
+		initialTotalLength.set(initTotalLength);
+		console.log(`Initial total curve length: ${initTotalLength}`);
+
 		optimizer = createOptimizer(
 			$vertices,
 			$edges,
@@ -109,9 +123,13 @@
 			beta,
 			initialKernel.disjointPairs,
 			maxIterations,
-			updateVisualization,
-			initialEdgeLengths
+			updateVisualization
 		);
+
+		// Connect the optimizer to the controls
+		if (controlsComponent) {
+			controlsComponent.setOptimizer(optimizer);
+		}
 
 		cleanupInteractions();
 		cleanupInteractions = setupInteractions(graphCanvas, $vertices, updateVisualization);
@@ -182,7 +200,11 @@
 			<p>Discrete Energy: {$discreteEnergy.toFixed(4)}</p>
 			<p style="color: {getEnergyChangeColor()}">Energy Change: {$energyChange.toFixed(4)}</p>
 		</div>
-		<Controls on:update={updateVisualization} />
+		<Controls
+			on:update={updateVisualization}
+			on:alphaBetaChange={handleAlphaBetaChange}
+			bind:this={controlsComponent}
+		/>
 	</div>
 	<div class="graph-section">
 		<div class="graph-container" style="position: relative; width: {width}px; height: {height}px;">
@@ -200,5 +222,36 @@
 	}
 	.graph-section {
 		flex: 1;
+	}
+
+	.energy-value {
+		background-color: #f5f5f5;
+		padding: 10px;
+		border-radius: 5px;
+		margin-bottom: 10px;
+	}
+
+	.energy-value p {
+		margin: 0;
+		padding: 3px 0;
+	}
+
+	button {
+		padding: 8px 16px;
+		font-size: 14px;
+		border: none;
+		border-radius: 4px;
+		background-color: #4caf50;
+		color: white;
+		cursor: pointer;
+		transition: background-color 0.3s;
+	}
+
+	button:hover {
+		background-color: #45a049;
+	}
+
+	button:active {
+		background-color: #3e8e41;
 	}
 </style>

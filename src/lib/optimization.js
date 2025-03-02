@@ -10,6 +10,9 @@ import * as math from 'mathjs';
 import { get } from 'svelte/store';
 import { config } from '$lib/stores';
 import { updateKernelState } from '$lib/graphState';
+import { initialTotalLength } from './stores';
+import { calculateTotalLength } from './constraints';
+
 
 // Import the constraint functionality
 import { 
@@ -29,6 +32,7 @@ const GRADIENT_METHODS = {
 };
 const annealing = false;
 const gradCap = false;
+
 
 // Default optimization settings
 let optimizationConfig = {
@@ -409,6 +413,9 @@ export function createOptimizer(
     let intervalId = null;
     let lastEnergy = null;
     let stuckCounter = 0;
+    const initTotalLength = calculateTotalLength(vertices, edges);
+    initialTotalLength.set(initTotalLength);
+    console.log(`Initial total curve length: ${initTotalLength}`);
     
     const applyPerturbation = get(config).applyPerturbation;
     if (applyPerturbation) {

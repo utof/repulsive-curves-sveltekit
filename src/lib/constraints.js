@@ -1,6 +1,6 @@
 // src/lib/constraints.js
 import { get } from 'svelte/store';
-import { config } from './stores';
+import { config, initialTotalLength } from './stores';
 import * as math from 'mathjs';
 import { calculateEdgeProperties } from './energyCalculations';
 
@@ -59,6 +59,27 @@ export function calculateBarycenter(vertices, edges, weighted = true) {
 }
 
 /**
+ * Calculate the total length of a curve
+ * @param {Array} vertices - Vertex positions
+ * @param {Array} edges - Edge connections
+ * @returns {number} Total curve length
+ */
+export function calculateTotalLength(vertices, edges) {
+    try {
+        let totalLength = 0;
+        for (const [v1, v2] of edges) {
+            const dx = vertices[v2][0] - vertices[v1][0];
+            const dy = vertices[v2][1] - vertices[v1][1];
+            totalLength += Math.sqrt(dx*dx + dy*dy);
+        }
+        return totalLength;
+    } catch (error) {
+        console.error("Error calculating total length:", error);
+        return 0;
+    }
+}
+
+/**
  * Evaluates all constraints for the given vertices
  * Returns a flattened array of constraint values
  *
@@ -81,10 +102,30 @@ export function evaluateConstraints(vertices, constraints, edges = []) {
         constraintValues.push(currentBarycenter[0] - targetBarycenter[0]);
         constraintValues.push(currentBarycenter[1] - targetBarycenter[1]);
         
-        console.log(`Barycenter constraint: current=[${currentBarycenter}], target=[${targetBarycenter}], violation=[${constraintValues}]`);
+        console.log(`Barycenter constraint: current=[${currentBarycenter}], target=[${targetBarycenter}], violation=[${constraintValues.slice(-2)}]`);
     }
     
-    // Length constraint - currently not implemented but would be added here
+    // Length constraint
+    if (constraints.length) {
+        console.log("Evaluating length constraint");
+        
+        // Target length can be a direct value or a percentage of initial length
+        let targetLength = constraints.lengthTarget || 0;
+        
+        // Check if target should be calculated from percentage
+        if (constraints.lengthPercentage) {
+            const initialLength = get(initialTotalLength);
+            targetLength = initialLength * (constraints.lengthPercentage / 100);
+            console.log(`Using ${constraints.lengthPercentage}% of initial length (${initialLength.toFixed(2)}) as target: ${targetLength.toFixed(2)}`);
+        }
+        
+        const currentLength = calculateTotalLength(vertices, edges);
+        
+        // Constraint is defined as: L^0 - ∑_{I∈E} ℓ_I = 0
+        constraintValues.push(targetLength - currentLength);
+        
+        console.log(`Length constraint: current=${currentLength.toFixed(2)}, target=${targetLength.toFixed(2)}, violation=${(targetLength - currentLength).toFixed(2)}`);
+    }
     
     return constraintValues;
 }
@@ -115,7 +156,7 @@ export function buildConstraintJacobian(vertices, constraints, edges = []) {
         // For the y-component of barycenter constraint
         const yRow = new Array(numVertices * 2).fill(0);
         
-        // Calculate total weight for normalization
+        // Calculate edge properties for weighted contribution calculation
         const { edgeLengths } = calculateEdgeProperties(vertices, edges);
         const totalWeight = edgeLengths.reduce((sum, len) => sum + (isFinite(len) ? len : 0), 0);
         
@@ -127,11 +168,16 @@ export function buildConstraintJacobian(vertices, constraints, edges = []) {
             return jacobian;
         }
         
-        // We need to determine how the barycenter changes when each vertex moves
-        // For a weighted barycenter, each vertex contributes based on its edges
+        // Scale factor for the Jacobian to improve numerical stability
+        // This helps prevent the large gradients issue mentioned
+        const stabilizationFactor = get(config).barycenterStabilization || 0.01;
+        
+        // For each edge, compute how vertices affect the weighted barycenter
         for (let i = 0; i < edges.length; i++) {
             const [v1, v2] = edges[i];
-            const weight = edgeLengths[i] / totalWeight / 2; // Divided by 2 because each vertex contributes half to the midpoint
+            // Weight is normalized by total weight for better conditioning
+            // Each vertex contributes half to the midpoint
+            const weight = edgeLengths[i] / totalWeight / 2 * stabilizationFactor;
             
             if (!isFinite(weight)) continue;
             
@@ -156,7 +202,47 @@ export function buildConstraintJacobian(vertices, constraints, edges = []) {
         console.log(`Barycenter Jacobian: y-row has ${yRow.filter(v => v !== 0).length} non-zero entries`);
     }
     
-    // Length constraint Jacobian would be added here
+    // Length constraint Jacobian
+    if (constraints.length) {
+        console.log("Building Jacobian for length constraint");
+        
+        // One row for the length constraint
+        const lengthRow = new Array(numVertices * 2).fill(0);
+        
+        // Scale factor for the Jacobian to improve numerical stability
+        const stabilizationFactor = get(config).lengthStabilization || 0.01;
+        
+        // For each edge, calculate derivatives of length with respect to vertices
+        for (const [v1, v2] of edges) {
+            const dx = vertices[v2][0] - vertices[v1][0];
+            const dy = vertices[v2][1] - vertices[v1][1];
+            const length = Math.sqrt(dx*dx + dy*dy);
+            
+            if (!isFinite(length) || length <= 0) continue;
+            
+            // Derivatives of length with respect to each vertex component
+            // d(length)/d(v1.x) = -dx/length
+            // d(length)/d(v1.y) = -dy/length
+            // d(length)/d(v2.x) = dx/length
+            // d(length)/d(v2.y) = dy/length
+            
+            // Apply stabilization factor to improve numerical conditioning
+            const factor = stabilizationFactor / length;
+            
+            // v1 derivatives (negative because moving v1 away from v2 increases length)
+            lengthRow[v1 * 2] -= dx * factor;
+            lengthRow[v1 * 2 + 1] -= dy * factor;
+            
+            // v2 derivatives
+            lengthRow[v2 * 2] += dx * factor;
+            lengthRow[v2 * 2 + 1] += dy * factor;
+        }
+        
+        // Add row to the Jacobian
+        jacobian.push(lengthRow);
+        
+        console.log(`Length Jacobian: row has ${lengthRow.filter(v => v !== 0).length} non-zero entries`);
+    }
     
     return jacobian;
 }
