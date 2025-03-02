@@ -1,32 +1,82 @@
 // src/lib/stores.js
 import { writable, derived } from 'svelte/store';
+import { GradientMethods } from './optimization'; // Import gradient method constants
 
+// Numerical parameters and basic configuration
 export const config = writable({
+    // Numerical stability parameters
     epsilonStability: 1e-7,
     epsilonKernel: 1e-6,
     finiteDiffH: 1e-4,
+    constraintTolerance: 1e-2,
+    differentialMethod: 'finiteDifference',
+    
+    // Line search parameters
     tauInitial: 1.0,
     aConst: 0.1,
     bConst: 0.5,
-    constraintTolerance: 1e-2,
-    differentialMethod: 'finiteDifference',
-    precondStepSize: 0.000005,
-    l2StepSize: 100000,
-    applyPerturbation: false,
-    subvertexGap: 100, // Desired gap distance between subvertices (pixels)
-    useSubverticesInEnergy: false, // Whether to include subvertices in energy calculations
-    useLineSearch: false, // Whether to use line search for step size optimization
     maxLineSearch: 20,
     maxConstraintIterations: 3,
     
-    // Constraint regularization parameters
-    barycenterStabilization: 0.9, // Stabilization factor for barycenter constraint
-    lengthStabilization: 0.9,     // Stabilization factor for length constraint
+    // Runtime parameters
+    applyPerturbation: false,
+    minEnergyChange: 1e-6,
+    maxStuckIterations: 10,
+    perturbationScale: 0.1,
+    
+    // Subvertex options
+    subvertexGap: 100, 
+    useSubverticesInEnergy: false,
 });
 
+// Centralized optimization configuration
+export const optimizationConfig = writable({
+    // Energy parameters
+    alpha: 3,
+    beta: 6,
+    linkAlphaBeta: true,  // When true, maintain beta = 2*alpha
+    
+    // Gradient method
+    gradientMethod: GradientMethods.PRECONDITIONED,
+    
+    // Step size control
+    useLineSearch: false,
+    precondStepSize: 0.000005,
+    l2StepSize: 100000,
+    
+    // Constraint settings
+    constraints: {
+        barycenter: {
+            enabled: true,
+            target: [300, 300]
+        },
+        length: {
+            enabled: false,
+            usePercentage: true,
+            percentage: 100,
+            absoluteValue: 0
+        },
+        // Future constraint types can be added here
+    },
+    
+    // Constraint implementation
+    useFullConstraintProjection: true,
+    
+    // Constraint stabilization factors
+    barycenterStabilization: 0.01,
+    lengthStabilization: 0.01,
+    
+    // Current iteration (used for adaptive strategies)
+    currentIteration: 0
+});
+
+// Vertex and edge data
 export const vertices = writable([]); // Supervertices
 export const edges = writable([]);
-export const subvertices = writable([]); // New store for subvertices
+export const subvertices = writable([]); // Subvertices
+export const initialTotalLength = writable(0);
+
+// Kernel data and energy
 export const kernelData = writable({
     kernelMatrix: null,
     discreteEnergy: 0,
@@ -35,15 +85,24 @@ export const kernelData = writable({
 });
 export const energyChange = writable(0);
 export const previousEnergy = writable(0);
+export const discreteEnergy = derived(kernelData, ($kernelData) => $kernelData.discreteEnergy);
 
-// Store the initial total length for percentage-based constraints
-export const initialTotalLength = writable(0);
-
-// Store for canvas transformations
+// Canvas transformation
 export const canvasTransform = writable({
     offsetX: 0,
     offsetY: 0,
     zoom: 1.0
 });
 
-export const discreteEnergy = derived(kernelData, ($kernelData) => $kernelData.discreteEnergy);
+// History for undo/redo functionality
+export const optimizationHistory = writable([]);
+
+// Session data - remembers user preferences
+export const userPreferences = writable({
+    showAdvancedOptions: false,
+    darkMode: false,
+});
+
+// Current date and username for logging
+export const currentDateTimeUTC = writable("2025-03-02 15:21:29");
+export const currentUser = writable("utof");

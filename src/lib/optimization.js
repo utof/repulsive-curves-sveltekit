@@ -8,11 +8,9 @@ import {
 import { computePreconditionedGradient, build_A_bar_2D } from '$lib/innerProduct';
 import * as math from 'mathjs';
 import { get } from 'svelte/store';
-import { config } from '$lib/stores';
+import { config, optimizationConfig, initialTotalLength } from '$lib/stores';
 import { updateKernelState } from '$lib/graphState';
-import { initialTotalLength } from './stores';
-import { calculateTotalLength } from './constraints';
-
+import { calculateTotalLength } from '$lib/constraints';
 
 // Import the constraint functionality
 import { 
@@ -26,23 +24,9 @@ import {
 } from '$lib/constraintProjection';
 
 // Configuration for available gradient methods
-const GRADIENT_METHODS = {
+export const GradientMethods = {
     L2: 'l2',
     PRECONDITIONED: 'preconditioned'
-};
-const annealing = false;
-const gradCap = false;
-
-
-// Default optimization settings
-let optimizationConfig = {
-    gradientMethod: GRADIENT_METHODS.PRECONDITIONED,
-    constraints: {
-        barycenter: true,            // Fix curve barycenter
-        barycenterTarget: [300, 300]  // Target barycenter position
-    },
-    // Control whether to use full constraint projection from the paper
-    useFullConstraintProjection: true
 };
 
 /**
@@ -87,7 +71,7 @@ function computeGradient(method, vertices, edges, alpha, beta, disjointPairs) {
     
     // Based on method, compute the appropriate gradient
     switch(method) {
-        case GRADIENT_METHODS.PRECONDITIONED:
+        case GradientMethods.PRECONDITIONED:
             try {
                 const { edgeTangents } = calculateEdgeProperties(vertices, edges);
                 const gradient = computePreconditionedGradient(
@@ -106,7 +90,7 @@ function computeGradient(method, vertices, edges, alpha, beta, disjointPairs) {
                 // Fall through to L2 method
             }
             
-        case GRADIENT_METHODS.L2:
+        case GradientMethods.L2:
         default:
             // For L2 gradient, the gradient is the differential and direction is negative gradient
             const gradient = differential.map(([dx, dy]) => [dx, dy]);
@@ -179,8 +163,11 @@ function performLineSearch(
         const stepVertices = takeFixedStep(vertices, direction, t);
         console.log(`Line search iteration ${i+1}/${maxIterations}, step size t=${t.toFixed(6)}`);
         
+        // Get current optimization config
+        const optConfig = get(optimizationConfig);
+        
         // Apply constraint projection only if there are active constraints
-        if (optimizationConfig.useFullConstraintProjection && constraintData.values && constraintData.values.length > 0) {
+        if (optConfig.useFullConstraintProjection && constraintData.values && constraintData.values.length > 0) {
             // Use full constraint projection from the paper (Section 5.3.2)
             console.log("Using full constraint projection in line search");
             
@@ -237,9 +224,18 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
     console.log("Edges structure in gradientDescentStep:", JSON.stringify(edges));
     console.log("Edge count:", edges.length);
     
-    // Get configuration
-    const useLineSearch = get(config).useLineSearch;
-    const constraints = optimizationConfig.constraints;
+    // Get current optimization configuration
+    const optConfig = get(optimizationConfig);
+    const configValues = get(config);
+    
+    // Create constraints object from optimization config
+    const constraints = {
+        barycenter: optConfig.constraints.barycenter.enabled,
+        barycenterTarget: optConfig.constraints.barycenter.target,
+        length: optConfig.constraints.length.enabled,
+        lengthTarget: optConfig.constraints.length.usePercentage ? undefined : optConfig.constraints.length.absoluteValue,
+        lengthPercentage: optConfig.constraints.length.usePercentage ? optConfig.constraints.length.percentage : undefined
+    };
     
     // Create constraint data for projection
     const constraintData = createConstraintData(vertices, constraints, edges);
@@ -248,7 +244,10 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
     const hasActiveConstraints = constraintData.values && constraintData.values.length > 0;
     
     if (hasActiveConstraints) {
-        console.log(`Active constraints: ${Object.keys(constraints).filter(k => constraints[k]).join(', ')}`);
+        console.log(`Active constraints: ${Object.entries(constraints)
+            .filter(([k, v]) => v === true)
+            .map(([k]) => k)
+            .join(', ')}`);
         console.log(`Constraint values: [${constraintData.values.join(', ')}]`);
     } else {
         console.log("No active constraints");
@@ -256,7 +255,7 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
     
     // 1. Compute gradient and direction
     const { gradient, direction, differential } = computeGradient(
-        optimizationConfig.gradientMethod,
+        optConfig.gradientMethod,
         vertices, 
         edges, 
         alpha, 
@@ -267,7 +266,7 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
     // 2. Project gradient onto constraint tangent space (Section 5.3.1 of the paper)
     let projectedDirection;
     
-    if (optimizationConfig.useFullConstraintProjection && hasActiveConstraints) {
+    if (optConfig.useFullConstraintProjection && hasActiveConstraints) {
         // Use full saddle point system from the paper
         console.log("Using full gradient projection");
         const flatDirection = flattenVectors(direction);
@@ -309,16 +308,13 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
         return vertices.map(v => [...v]);  // Return copy of current vertices
     }
     
-    // ADD: Detect oscillation by tracking the angle between consecutive directions
-    // This would require storing the previous direction - can be added if needed
-    
     // 3. Take step (either fixed or with line search)
-    if (useLineSearch) {
+    if (optConfig.useLineSearch) {
         const lineSearchSettings = {
-            initialStepSize: get(config).tauInitial,
-            decay: get(config).bConst,
-            sufficientDecrease: get(config).aConst,
-            maxIterations: get(config).maxLineSearch
+            initialStepSize: configValues.tauInitial,
+            decay: configValues.bConst,
+            sufficientDecrease: configValues.aConst,
+            maxIterations: configValues.maxLineSearch
         };
         
         return performLineSearch(
@@ -334,34 +330,22 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
         );
     } else {
         // Fixed step size based on gradient method
-        let stepSize = optimizationConfig.gradientMethod === GRADIENT_METHODS.PRECONDITIONED
-            ? get(config).precondStepSize
-            : get(config).l2StepSize;
+        let stepSize = optConfig.gradientMethod === GradientMethods.PRECONDITIONED
+            ? optConfig.precondStepSize
+            : optConfig.l2StepSize;
         
         // CRITICAL FIX: Add adaptive step size scaling based on direction magnitude
-        if (gradCap) {
-            if (dirMagnitude * stepSize > MAX_STEP_MAGNITUDE) {
-                const oldStepSize = stepSize;
-                stepSize = MAX_STEP_MAGNITUDE / dirMagnitude;
-                console.log(`Reducing step size for stability: ${oldStepSize} -> ${stepSize}`);
-            }
-        }
-        
-        // ANNEALING: Gradually reduce step size over iterations to help convergence
-        if (annealing) {
-            const currentIteration = optimizationConfig.currentIteration || 0;
-            if (currentIteration > 20) {
-                const annealingFactor = Math.max(0.2, 1.0 - (currentIteration - 20) / 100);
-                stepSize *= annealingFactor;
-                console.log(`Annealing step size: ${stepSize} (factor: ${annealingFactor})`);
-            }
+        if (dirMagnitude * stepSize > MAX_STEP_MAGNITUDE) {
+            const oldStepSize = stepSize;
+            stepSize = MAX_STEP_MAGNITUDE / dirMagnitude;
+            console.log(`Reducing step size for stability: ${oldStepSize} -> ${stepSize}`);
         }
         
         console.log(`Taking fixed step with size ${stepSize}`);
         const newVertices = takeFixedStep(vertices, projectedDirection, stepSize);
         
         // Apply constraint projection only if there are active constraints
-        if (optimizationConfig.useFullConstraintProjection && hasActiveConstraints) {
+        if (optConfig.useFullConstraintProjection && hasActiveConstraints) {
             console.log("Applying full constraint projection after step");
             
             // Define parameters for projection
@@ -413,19 +397,28 @@ export function createOptimizer(
     let intervalId = null;
     let lastEnergy = null;
     let stuckCounter = 0;
+    
+    // Initialize alpha and beta in the optimization config
+    optimizationConfig.update(config => ({
+        ...config,
+        alpha,
+        beta
+    }));
+    
+    // Calculate and store the initial total curve length for percentage-based constraints
     const initTotalLength = calculateTotalLength(vertices, edges);
     initialTotalLength.set(initTotalLength);
     console.log(`Initial total curve length: ${initTotalLength}`);
-    
-    const applyPerturbation = get(config).applyPerturbation;
+
+    const configValues = get(config);
+    const applyPerturbation = configValues.applyPerturbation;
     if (applyPerturbation) {
         lastEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
     }
 
     console.log("Creating optimizer with parameters:");
-    console.log(`- Gradient method: ${optimizationConfig.gradientMethod}`);
-    console.log(`- Use full constraint projection: ${optimizationConfig.useFullConstraintProjection}`);
-    console.log(`- Constraints: ${JSON.stringify(optimizationConfig.constraints)}`);
+    console.log(`- Gradient method: ${get(optimizationConfig).gradientMethod}`);
+    console.log(`- Use full constraint projection: ${get(optimizationConfig).useFullConstraintProjection}`);
     console.log(`- Edge count: ${edges.length}`);
     console.log("Edges structure:", JSON.stringify(edges));
 
@@ -434,8 +427,11 @@ export function createOptimizer(
             if (currentIteration < maxIterations) {
                 console.log(`\n--- Iteration ${currentIteration + 1}/${maxIterations} ---`);
                 
-                // Store current iteration for adaptive strategies
-                optimizationConfig.currentIteration = currentIteration;
+                // Update current iteration in optimization config for adaptive strategies
+                optimizationConfig.update(config => ({
+                    ...config, 
+                    currentIteration
+                }));
                 
                 try {
                     // Ensure edges is a proper array before passing it
@@ -457,11 +453,14 @@ export function createOptimizer(
                         }
                     });
                     
+                    // Get latest alpha and beta from store
+                    const { alpha: currentAlpha, beta: currentBeta } = get(optimizationConfig);
+                    
                     const newVertices = gradientDescentStep(
                         vertices,
                         edges,
-                        alpha,
-                        beta,
+                        currentAlpha,
+                        currentBeta,
                         disjointPairs
                     );
                     
@@ -472,21 +471,22 @@ export function createOptimizer(
                     });
                     
                     // Update kernel state including subvertices
-                    updateKernelState(vertices, edges, alpha, beta, disjointPairs);
+                    updateKernelState(vertices, edges, currentAlpha, currentBeta, disjointPairs);
                     
                     if (applyPerturbation) {
-                        const newEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+                        const newEnergy = calculateDiscreteEnergy(vertices, edges, currentAlpha, currentBeta, disjointPairs);
                         const energyChange = newEnergy - lastEnergy;
                         
                         console.log(`Energy: ${newEnergy.toFixed(6)}, Change: ${energyChange.toFixed(6)}`);
                         
-                        if (Math.abs(energyChange) < (get(config).minEnergyChange || 1e-6)) {
+                        const configValues = get(config);
+                        if (Math.abs(energyChange) < (configValues.minEnergyChange || 1e-6)) {
                             stuckCounter++;
-                            console.log(`Possibly stuck: counter = ${stuckCounter}/${get(config).maxStuckIterations || 10}`);
+                            console.log(`Possibly stuck: counter = ${stuckCounter}/${configValues.maxStuckIterations || 10}`);
                             
-                            if (stuckCounter > (get(config).maxStuckIterations || 10)) {
+                            if (stuckCounter > (configValues.maxStuckIterations || 10)) {
                                 console.log('Optimizer stuck, applying random perturbation');
-                                applyRandomPerturbation(vertices, get(config).perturbationScale || 0.1);
+                                applyRandomPerturbation(vertices, configValues.perturbationScale || 0.1);
                                 stuckCounter = 0;
                             }
                         } else {
@@ -513,7 +513,8 @@ export function createOptimizer(
             stuckCounter = 0;
             
             if (applyPerturbation) {
-                lastEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+                const { alpha: currentAlpha, beta: currentBeta } = get(optimizationConfig);
+                lastEnergy = calculateDiscreteEnergy(vertices, edges, currentAlpha, currentBeta, disjointPairs);
             }
             
             if (!intervalId) intervalId = setInterval(optimizer.step, 20);
@@ -527,9 +528,12 @@ export function createOptimizer(
         },
         // Update gradient method
         setGradientMethod: (method) => {
-            if (Object.values(GRADIENT_METHODS).includes(method)) {
+            if (Object.values(GradientMethods).includes(method)) {
                 console.log(`Changing gradient method to ${method}`);
-                optimizationConfig.gradientMethod = method;
+                optimizationConfig.update(config => ({
+                    ...config,
+                    gradientMethod: method
+                }));
             } else {
                 console.warn(`Unknown gradient method: ${method}`);
             }
@@ -537,18 +541,61 @@ export function createOptimizer(
         // Update constraint settings
         setConstraints: (newConstraints) => {
             console.log(`Updating constraints: ${JSON.stringify(newConstraints)}`);
-            optimizationConfig.constraints = {
-                ...optimizationConfig.constraints,
-                ...newConstraints
-            };
+            
+            optimizationConfig.update(config => ({
+                ...config,
+                constraints: {
+                    barycenter: {
+                        enabled: newConstraints.barycenter ?? config.constraints.barycenter.enabled,
+                        target: newConstraints.barycenterTarget ?? config.constraints.barycenter.target
+                    },
+                    length: {
+                        enabled: newConstraints.length ?? config.constraints.length.enabled,
+                        usePercentage: newConstraints.lengthPercentage !== undefined,
+                        percentage: newConstraints.lengthPercentage ?? config.constraints.length.percentage,
+                        absoluteValue: newConstraints.lengthTarget ?? config.constraints.length.absoluteValue
+                    }
+                }
+            }));
         },
         // Toggle full constraint projection
         setUseFullConstraintProjection: (useFullProjection) => {
             console.log(`Setting full constraint projection: ${useFullProjection}`);
-            optimizationConfig.useFullConstraintProjection = !!useFullProjection;
+            optimizationConfig.update(config => ({
+                ...config,
+                useFullConstraintProjection: !!useFullProjection
+            }));
+        },
+        // Update optimizer settings
+        updateSettings: (newSettings) => {
+            console.log(`Updating optimizer settings: ${JSON.stringify(newSettings)}`);
+            optimizationConfig.update(config => ({
+                ...config,
+                useLineSearch: newSettings.useLineSearch ?? config.useLineSearch,
+                precondStepSize: newSettings.precondStepSize ?? config.precondStepSize,
+                l2StepSize: newSettings.l2StepSize ?? config.l2StepSize
+            }));
+        },
+        // Update alpha and beta parameters
+        updateAlphaBeta: (newAlpha, newBeta) => {
+            console.log(`Updating alpha=${newAlpha}, beta=${newBeta}`);
+            optimizationConfig.update(config => ({
+                ...config,
+                alpha: newAlpha,
+                beta: newBeta
+            }));
         },
         // Get current configuration
-        getConfig: () => ({...optimizationConfig})
+        getConfig: () => get(optimizationConfig),
+        
+        // Reset iterations counter
+        resetIterations: () => {
+            currentIteration = 0;
+            optimizationConfig.update(config => ({
+                ...config,
+                currentIteration: 0
+            }));
+        }
     };
 
     return optimizer;
@@ -566,6 +613,3 @@ function applyRandomPerturbation(vertices, scale) {
         vertex[1] += (Math.random() - 0.5) * scale;
     }
 }
-
-// Export constants for use in other files
-export const GradientMethods = GRADIENT_METHODS;

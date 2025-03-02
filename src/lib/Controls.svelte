@@ -1,27 +1,43 @@
 <script>
 	import { createEventDispatcher } from 'svelte';
-	import { config, initialTotalLength } from './stores';
+	import {
+		config,
+		optimizationConfig,
+		initialTotalLength,
+		currentUser,
+		currentDateTimeUTC
+	} from './stores';
 	import { GradientMethods } from './optimization';
 	import { get } from 'svelte/store';
 
 	const dispatch = createEventDispatcher();
 
+	// Local copies of store values for binding
 	// Alpha beta parameters
-	let alpha = 3;
-	let beta = 6;
-	let linkAlphaBeta = true; // When true, beta = 2*alpha
+	let alpha = $optimizationConfig.alpha;
+	let beta = $optimizationConfig.beta;
+	let linkAlphaBeta = $optimizationConfig.linkAlphaBeta;
 
 	// Optimization settings
-	let gradientMethod = GradientMethods.PRECONDITIONED;
+	let gradientMethod = $optimizationConfig.gradientMethod;
 
 	// Constraint settings
-	let useBarycenterConstraint = true;
-	let barycenterTarget = [300, 300];
-	let useLengthConstraint = false;
-	let lengthTarget = 0;
-	let lengthPercentage = 100;
-	let useLengthPercentage = true; // Whether to use percentage or absolute value
-	let useFullConstraintProjection = true;
+	let useBarycenterConstraint = $optimizationConfig.constraints.barycenter.enabled;
+	let barycenterTarget = [...$optimizationConfig.constraints.barycenter.target];
+	let useLengthConstraint = $optimizationConfig.constraints.length.enabled;
+	let lengthTarget = $optimizationConfig.constraints.length.absoluteValue;
+	let lengthPercentage = $optimizationConfig.constraints.length.percentage;
+	let useLengthPercentage = $optimizationConfig.constraints.length.usePercentage;
+	let useFullConstraintProjection = $optimizationConfig.useFullConstraintProjection;
+
+	// Step size controls
+	let useLineSearch = $optimizationConfig.useLineSearch;
+	let precondStepSize = $optimizationConfig.precondStepSize;
+	let l2StepSize = $optimizationConfig.l2StepSize;
+
+	// Constraint stabilization
+	let barycenterStabilization = $optimizationConfig.barycenterStabilization;
+	let lengthStabilization = $optimizationConfig.lengthStabilization;
 
 	// Panel toggle states
 	let openPanels = {
@@ -32,19 +48,10 @@
 	};
 
 	// Exponent sliders
-	let epsilonStabilityExponent = -7;
-	let epsilonKernelExponent = -6;
-	let finiteDiffHExponent = -4;
-	let constraintToleranceExponent = -2;
-
-	// For step size control
-	let useLineSearch = $config.useLineSearch ?? false;
-	let precondStepSize = $config.precondStepSize ?? 0.000005;
-	let l2StepSize = $config.l2StepSize ?? 100000;
-
-	// For constraint stabilization
-	let barycenterStabilization = $config.barycenterStabilization ?? 0.01;
-	let lengthStabilization = $config.lengthStabilization ?? 0.01;
+	let epsilonStabilityExponent = Math.log10($config.epsilonStability);
+	let epsilonKernelExponent = Math.log10($config.epsilonKernel);
+	let finiteDiffHExponent = Math.log10($config.finiteDiffH);
+	let constraintToleranceExponent = Math.log10($config.constraintTolerance);
 
 	// Stores reference to the optimizer
 	let optimizer;
@@ -55,19 +62,14 @@
 		updateOptimizerConfig();
 	}
 
-	// Update all configuration when settings change
+	// Update numerical configuration parameters
 	function updateConfig() {
 		config.update((current) => ({
 			...current,
 			epsilonStability: Math.pow(10, epsilonStabilityExponent),
 			epsilonKernel: Math.pow(10, epsilonKernelExponent),
 			finiteDiffH: Math.pow(10, finiteDiffHExponent),
-			constraintTolerance: Math.pow(10, constraintToleranceExponent),
-			useLineSearch,
-			precondStepSize,
-			l2StepSize,
-			barycenterStabilization,
-			lengthStabilization
+			constraintTolerance: Math.pow(10, constraintToleranceExponent)
 		}));
 
 		dispatch('update');
@@ -79,16 +81,46 @@
 			beta = 2 * alpha;
 		}
 
-		if (optimizer) {
-			// This would require adding a method to the optimizer to update alpha/beta
-			// For now, we'll just notify the parent to handle it
-			dispatch('alphaBetaChange', { alpha, beta });
-		}
+		optimizationConfig.update((current) => ({
+			...current,
+			alpha,
+			beta,
+			linkAlphaBeta
+		}));
+
+		dispatch('alphaBetaChange', { alpha, beta });
+		dispatch('update');
+	}
+
+	// Update optimization configuration
+	function updateOptimizationSettings() {
+		optimizationConfig.update((current) => ({
+			...current,
+			gradientMethod,
+			useLineSearch,
+			precondStepSize,
+			l2StepSize,
+			barycenterStabilization,
+			lengthStabilization,
+			useFullConstraintProjection,
+			constraints: {
+				barycenter: {
+					enabled: useBarycenterConstraint,
+					target: barycenterTarget
+				},
+				length: {
+					enabled: useLengthConstraint,
+					usePercentage: useLengthPercentage,
+					percentage: lengthPercentage,
+					absoluteValue: lengthTarget
+				}
+			}
+		}));
 
 		dispatch('update');
 	}
 
-	// Update optimizer configuration when constraint settings change
+	// Update optimizer configuration when settings change
 	function updateOptimizerConfig() {
 		if (!optimizer) return;
 
@@ -98,7 +130,7 @@
 		// Update constraints
 		optimizer.setConstraints({
 			barycenter: useBarycenterConstraint,
-			barycenterTarget: barycenterTarget,
+			barycenterTarget,
 			length: useLengthConstraint,
 			lengthTarget: useLengthPercentage ? undefined : lengthTarget,
 			lengthPercentage: useLengthPercentage ? lengthPercentage : undefined
@@ -106,6 +138,13 @@
 
 		// Update constraint projection method
 		optimizer.setUseFullConstraintProjection(useFullConstraintProjection);
+
+		// Update any other optimizer settings
+		optimizer.updateSettings({
+			useLineSearch,
+			precondStepSize,
+			l2StepSize
+		});
 
 		// Notify parent component
 		dispatch('update');
@@ -116,10 +155,44 @@
 		openPanels[panel] = !openPanels[panel];
 	}
 
+	// When optimization config store changes, update local variables
+	function updateFromStore() {
+		const opt = get(optimizationConfig);
+		alpha = opt.alpha;
+		beta = opt.beta;
+		linkAlphaBeta = opt.linkAlphaBeta;
+		gradientMethod = opt.gradientMethod;
+		useBarycenterConstraint = opt.constraints.barycenter.enabled;
+		barycenterTarget = [...opt.constraints.barycenter.target];
+		useLengthConstraint = opt.constraints.length.enabled;
+		lengthTarget = opt.constraints.length.absoluteValue;
+		lengthPercentage = opt.constraints.length.percentage;
+		useLengthPercentage = opt.constraints.length.usePercentage;
+		useFullConstraintProjection = opt.useFullConstraintProjection;
+		useLineSearch = opt.useLineSearch;
+		precondStepSize = opt.precondStepSize;
+		l2StepSize = opt.l2StepSize;
+		barycenterStabilization = opt.barycenterStabilization;
+		lengthStabilization = opt.lengthStabilization;
+	}
+
+	// Subscribe to store changes
+	const unsubscribe = optimizationConfig.subscribe(() => {
+		updateFromStore();
+	});
+
+	// Clean up subscription
+	import { onDestroy } from 'svelte';
+	onDestroy(unsubscribe);
+
+	// Apply changes when optimization settings are updated
 	$: {
-		// Reactively update when constraint settings change
-		if (optimizer) {
-			updateOptimizerConfig();
+		// This reactive block triggers when any optimization setting changes
+		if ($optimizationConfig) {
+			// This only updates the UI without triggering loops
+			if (optimizer) {
+				updateOptimizerConfig();
+			}
 		}
 	}
 
@@ -132,10 +205,23 @@
 	function formatExponent(exponent) {
 		return Math.pow(10, exponent).toExponential(2);
 	}
+
+	// Format the current date for display
+	function formatDate(dateString) {
+		return new Date(dateString).toLocaleString();
+	}
 </script>
 
 <div class="controls-container">
-	<h3>Optimization Controls</h3>
+	<div class="controls-header">
+		<h3>Optimization Controls</h3>
+		<div class="user-info">
+			<span>User: {$currentUser}</span>
+			<span title={formatDate($currentDateTimeUTC)}>
+				{$currentDateTimeUTC.split(' ')[0]}
+			</span>
+		</div>
+	</div>
 
 	<!-- OPTIMIZATION PARAMETERS SECTION -->
 	<div class="control-panel">
@@ -187,7 +273,7 @@
 							type="radio"
 							bind:group={gradientMethod}
 							value={GradientMethods.PRECONDITIONED}
-							on:change={updateOptimizerConfig}
+							on:change={updateOptimizationSettings}
 						/>
 						Fractional Sobolev (Paper Method)
 					</label>
@@ -196,7 +282,7 @@
 							type="radio"
 							bind:group={gradientMethod}
 							value={GradientMethods.L2}
-							on:change={updateOptimizerConfig}
+							on:change={updateOptimizationSettings}
 						/>
 						Standard L2 Gradient
 					</label>
@@ -206,7 +292,11 @@
 				<div class="control-group">
 					<h5>Step Size Control</h5>
 					<label class="checkbox-label">
-						<input type="checkbox" bind:checked={useLineSearch} on:change={updateConfig} />
+						<input
+							type="checkbox"
+							bind:checked={useLineSearch}
+							on:change={updateOptimizationSettings}
+						/>
 						Use Line Search
 					</label>
 
@@ -218,7 +308,7 @@
 									<input
 										type="range"
 										bind:value={precondStepSize}
-										on:change={updateConfig}
+										on:change={updateOptimizationSettings}
 										min="0.000001"
 										max="0.0001"
 										step="0.000001"
@@ -233,7 +323,7 @@
 									<input
 										type="range"
 										bind:value={l2StepSize}
-										on:change={updateConfig}
+										on:change={updateOptimizationSettings}
 										min="10000"
 										max="1000000"
 										step="10000"
@@ -263,7 +353,7 @@
 						<input
 							type="checkbox"
 							bind:checked={useBarycenterConstraint}
-							on:change={updateOptimizerConfig}
+							on:change={updateOptimizationSettings}
 						/>
 						Fix Barycenter
 					</label>
@@ -274,7 +364,7 @@
 									X: <input
 										type="number"
 										bind:value={barycenterTarget[0]}
-										on:change={updateOptimizerConfig}
+										on:change={updateOptimizationSettings}
 										min="0"
 										max="1000"
 									/>
@@ -283,7 +373,7 @@
 									Y: <input
 										type="number"
 										bind:value={barycenterTarget[1]}
-										on:change={updateOptimizerConfig}
+										on:change={updateOptimizationSettings}
 										min="0"
 										max="1000"
 									/>
@@ -299,7 +389,7 @@
 						<input
 							type="checkbox"
 							bind:checked={useLengthConstraint}
-							on:change={updateOptimizerConfig}
+							on:change={updateOptimizationSettings}
 						/>
 						Fix Curve Length
 					</label>
@@ -311,7 +401,7 @@
 										type="radio"
 										bind:group={useLengthPercentage}
 										value={true}
-										on:change={updateOptimizerConfig}
+										on:change={updateOptimizationSettings}
 									/>
 									Percentage of initial length
 								</label>
@@ -320,7 +410,7 @@
 										<input
 											type="range"
 											bind:value={lengthPercentage}
-											on:change={updateOptimizerConfig}
+											on:change={updateOptimizationSettings}
 											min="10"
 											max="200"
 											step="1"
@@ -338,7 +428,7 @@
 										type="radio"
 										bind:group={useLengthPercentage}
 										value={false}
-										on:change={updateOptimizerConfig}
+										on:change={updateOptimizationSettings}
 									/>
 									Absolute length
 								</label>
@@ -347,7 +437,7 @@
 										<input
 											type="number"
 											bind:value={lengthTarget}
-											on:change={updateOptimizerConfig}
+											on:change={updateOptimizationSettings}
 											min="0"
 											step="1"
 										/>
@@ -365,7 +455,7 @@
 						<input
 							type="checkbox"
 							bind:checked={useFullConstraintProjection}
-							on:change={updateOptimizerConfig}
+							on:change={updateOptimizationSettings}
 						/>
 						Use full constraint projection (paper method)
 					</label>
@@ -540,7 +630,7 @@
 								<input
 									type="range"
 									bind:value={barycenterStabilization}
-									on:input={updateConfig}
+									on:input={updateOptimizationSettings}
 									min="0.001"
 									max="0.1"
 									step="0.001"
@@ -555,7 +645,7 @@
 								<input
 									type="range"
 									bind:value={lengthStabilization}
-									on:input={updateConfig}
+									on:input={updateOptimizationSettings}
 									min="0.001"
 									max="0.1"
 									step="0.001"
@@ -605,14 +695,28 @@
 			-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 	}
 
-	h3 {
-		margin-top: 0;
+	.controls-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
 		margin-bottom: 15px;
+		border-bottom: 1px solid #dee2e6;
+		padding-bottom: 8px;
+	}
+
+	.user-info {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		font-size: 0.8rem;
+		color: #6c757d;
+	}
+
+	h3 {
+		margin: 0;
 		color: #343a40;
 		font-weight: 600;
 		font-size: 1.2rem;
-		border-bottom: 1px solid #dee2e6;
-		padding-bottom: 8px;
 	}
 
 	h4 {
