@@ -8,21 +8,22 @@ import { config } from './stores';
 // Set these to false to follow the paper exactly without stabilization
 const STABILIZATION_CONFIG = {
     // Whether to apply any stabilization measures (master switch)
-    useStabilization: true,
+    useStabilization: false,
     
     // Saddle point system regularization
-    useRegularization: false,      // Add small diagonal terms to stabilize matrix inversion
+    useRegularization: true,      // Add small diagonal terms to stabilize matrix inversion
+    regularizationEpsilon: 1e-6,  // Regularization parameter (default)
     
     // Gradient projection stabilization
-    limitGradientMagnitude: false, // Cap gradient magnitude to prevent extreme steps
-    maxGradientNorm: 1000.0,        // Maximum allowed gradient norm if limiting is enabled
+    limitGradientMagnitude: true, // Cap gradient magnitude to prevent extreme steps
+    maxGradientNorm: 1000.0,      // Maximum allowed gradient norm if limiting is enabled
     
     // Constraint projection stabilization 
-    useDamping: false,             // Apply damping factor to corrections
+    useDamping: true,             // Apply damping factor to corrections
     dampingFactor: 0.3,           // Initial damping factor for corrections (0-1)
-    limitCorrectionMagnitude: false, // Cap correction magnitude
+    limitCorrectionMagnitude: true, // Cap correction magnitude
     maxCorrectionNorm: 100.0,      // Maximum allowed correction if limiting is enabled
-    useBacktracking: false,        // Discard corrections that increase constraint violation
+    useBacktracking: true,        // Discard corrections that increase constraint violation
 };
 
 /**
@@ -65,16 +66,23 @@ export function solveSaddlePointSystem(A_bar, C, b, d) {
         
         console.log(`System dimensions: n=${n}, m=${m}`);
 
-        // Build the saddle point matrix
+        // Build the saddle point matrix with regularization
         let regularizedA = A_mat;
         let zeroBlock = math.zeros(m, m);
         
-        // Apply regularization if enabled
+        // Apply regularization to improve conditioning
         if (STABILIZATION_CONFIG.useStabilization && STABILIZATION_CONFIG.useRegularization) {
-            const epsilon = get(config).epsilonStability || 1e-7;
+            // Get configured epsilon or use default
+            const epsilon = get(config).epsilonStability || 
+                          STABILIZATION_CONFIG.regularizationEpsilon;
+                          
+            console.log(`Applying regularization with epsilon=${epsilon}`);
+            
+            // Add εI to A_bar block
             regularizedA = math.add(A_mat, math.multiply(epsilon, math.identity(n)));
-            zeroBlock = math.multiply(-epsilon, math.identity(m)); // Use -ϵI instead of 0
-            console.log("Using regularization with epsilon:", epsilon);
+            
+            // Use -εI instead of 0 for the bottom-right block
+            zeroBlock = math.multiply(-epsilon, math.identity(m));
         }
         
         // [ A_bar   C^T ]
@@ -94,7 +102,15 @@ export function solveSaddlePointSystem(A_bar, C, b, d) {
         const x = math.subset(solution, math.index(math.range(0, n), 0)).toArray().flat();
         const lambda = math.subset(solution, math.index(math.range(n, n + m), 0)).toArray().flat();
         
-        console.log("Solution found: |x| =", math.norm(x), ", |λ| =", math.norm(lambda));
+        const xNorm = math.norm(x);
+        const lambdaNorm = math.norm(lambda);
+        
+        console.log(`Solution found: |x| = ${xNorm}, |λ| = ${lambdaNorm}`);
+        
+        // Check for extremely large solutions that indicate numerical issues
+        if (!isFinite(xNorm) || xNorm > 1e10) {
+            console.error("WARNING: Solution has extremely large magnitude, likely numerical instability");
+        }
         
         return { x, lambda };
     } catch (error) {
@@ -120,9 +136,10 @@ export function solveSaddlePointSystem(A_bar, C, b, d) {
 export function projectGradient(gradient, vertices, edges, constraintData, params) {
     console.log("===== PROJECT GRADIENT - START =====");
     console.log("Projecting gradient using full saddle point system");
-    console.log("Gradient:", gradient.slice(0, 10) + (gradient.length > 10 ? "..." : ""));
-    console.log("Vertices length:", vertices.length);
-    console.log("Raw edges:", edges);
+    
+    // Log gradient norm for diagnosis
+    const gradientNorm = math.norm(gradient);
+    console.log(`Original gradient norm: ${gradientNorm}`);
     
     // Ensure edges are properly structured before proceeding
     if (!Array.isArray(edges)) {
@@ -133,7 +150,6 @@ export function projectGradient(gradient, vertices, edges, constraintData, param
     
     // Make a deep copy of the edges array to prevent mutations
     const safeEdges = edges.map(e => Array.isArray(e) ? [...e] : e);
-    console.log("Safe copy of edges:", JSON.stringify(safeEdges));
     
     // Extract constraint Jacobian and other needed data
     const { jacobian } = constraintData;
@@ -144,21 +160,14 @@ export function projectGradient(gradient, vertices, edges, constraintData, param
         return gradient;
     }
     
-    // Build the fractional Sobolev inner product matrix (A_bar)
-    console.log("Building A_bar matrix for gradient projection");
-    console.log("Calling build_A_bar_2D with:", 
-        `alpha=${params.alpha}`,
-        `beta=${params.beta}`,
-        `vertices (length ${vertices.length})`,
-        `safeEdges (length ${safeEdges.length})`
-    );
-    
     try {
+        // Build the fractional Sobolev inner product matrix (A_bar)
+        console.log("Building A_bar matrix for gradient projection");
+        
         // Pass safe copies of all parameters
         const verticesCopy = vertices.map(v => [...v]);
         
-        // Match parameter order with function definition
-        // From innerProduct.js: build_A_bar_2D(alpha, beta, vertices, edges)
+        // Build A_bar matrix
         const result = build_A_bar_2D(
             params.alpha,
             params.beta,
@@ -168,10 +177,6 @@ export function projectGradient(gradient, vertices, edges, constraintData, param
         
         // Extract A_bar from the result object
         const A_bar = result.A_bar;
-        
-        console.log("A_bar matrix built successfully:", A_bar.size()[0], "×", A_bar.size()[1]);
-        
-        // Convert A_bar matrix to array for compatibility with solveSaddlePointSystem
         const A_bar_array = A_bar.toArray();
         
         // Solve the saddle point system
@@ -184,28 +189,29 @@ export function projectGradient(gradient, vertices, edges, constraintData, param
         );
         
         // Check for numerical instability in the result and limit if configured
-        const gradientNorm = math.norm(projectedGradient);
-        console.log("Projected gradient norm:", gradientNorm);
-        
         let finalGradient = projectedGradient;
+        const projGradNorm = math.norm(projectedGradient);
+        
+        console.log(`Projected gradient norm: ${projGradNorm}`);
         
         // Apply clamping if enabled and the gradient is too large
         if (STABILIZATION_CONFIG.useStabilization && 
             STABILIZATION_CONFIG.limitGradientMagnitude && 
-            gradientNorm > STABILIZATION_CONFIG.maxGradientNorm) {
+            projGradNorm > STABILIZATION_CONFIG.maxGradientNorm) {
             
-            console.log(`Normalizing large gradient (${gradientNorm} -> ${STABILIZATION_CONFIG.maxGradientNorm})`);
-            const scaleFactor = STABILIZATION_CONFIG.maxGradientNorm / gradientNorm;
+            console.log(`Normalizing large gradient (${projGradNorm} -> ${STABILIZATION_CONFIG.maxGradientNorm})`);
+            const scaleFactor = STABILIZATION_CONFIG.maxGradientNorm / projGradNorm;
             finalGradient = projectedGradient.map(val => val * scaleFactor);
-            console.log("Final projected gradient norm:", math.norm(finalGradient));
+            console.log(`Final projected gradient norm after scaling: ${math.norm(finalGradient)}`);
         }
         
         console.log("===== PROJECT GRADIENT - END =====");
         return finalGradient;
     } catch (error) {
-        console.error("Error building A_bar or solving system:", error);
+        console.error("Error in gradient projection:", error);
         console.log("===== PROJECT GRADIENT - END WITH ERROR =====");
-        throw error;
+        // Fallback to original gradient if projection fails
+        return gradient;
     }
 }
 
@@ -232,10 +238,6 @@ export function projectOntoConstraintSet(
     params
 ) {
     console.log("===== PROJECT ONTO CONSTRAINT SET - START =====");
-    console.log("Projecting curve onto constraint set");
-    console.log("Vertices length:", vertices.length);
-    console.log("Edges:", JSON.stringify(edges));
-    console.log("Alpha:", params.alpha, "Beta:", params.beta);
     
     if (!constraints || Object.keys(constraints).length === 0) {
         console.log("No constraints defined, skipping projection");
@@ -262,7 +264,8 @@ export function projectOntoConstraintSet(
     // Make a deep copy of the edges array to prevent mutations
     const safeEdges = edges.map(e => Array.isArray(e) ? [...e] : e);
     
-    console.log("Initial constraint violation:", math.norm(values));
+    const initialViolation = math.norm(values);
+    console.log("Initial constraint violation:", initialViolation);
     
     // Make a working copy of vertices
     let projectedVertices = vertices.map(v => [...v]);
@@ -270,9 +273,13 @@ export function projectOntoConstraintSet(
     const tolerance = get(config).constraintTolerance || 1e-4;
     const maxIterations = get(config).maxConstraintIterations || 3;
     
-    // Set damping factor if damping is enabled
+    // Set damping factor if enabled
     let dampingFactor = STABILIZATION_CONFIG.useStabilization && STABILIZATION_CONFIG.useDamping ? 
                         STABILIZATION_CONFIG.dampingFactor : 1.0;
+    
+    // Track best solution so far
+    let bestVertices = projectedVertices;
+    let bestViolation = initialViolation;
     
     // Newton-like iterations to project onto constraint set
     for (let iter = 0; iter < maxIterations; iter++) {
@@ -281,6 +288,12 @@ export function projectOntoConstraintSet(
         const constraintNorm = math.norm(constraintValues);
         
         console.log(`Iteration ${iter+1}/${maxIterations}, constraint violation: ${constraintNorm}`);
+        
+        // Update best solution if this one is better
+        if (constraintNorm < bestViolation) {
+            bestViolation = constraintNorm;
+            bestVertices = projectedVertices.map(v => [...v]);
+        }
         
         // Check if we're already close enough to the constraint set
         if (constraintNorm < tolerance) {
@@ -296,7 +309,6 @@ export function projectOntoConstraintSet(
         
         try {
             // Match parameter order with function definition
-            // From innerProduct.js: build_A_bar_2D(alpha, beta, vertices, edges)
             const result = build_A_bar_2D(
                 params.alpha,
                 params.beta,
@@ -306,10 +318,6 @@ export function projectOntoConstraintSet(
             
             // Extract A_bar from the result object
             const A_bar = result.A_bar;
-            
-            console.log("A_bar matrix built successfully:", A_bar.size()[0], "×", A_bar.size()[1]);
-            
-            // Convert A_bar matrix to array for compatibility with solveSaddlePointSystem
             const A_bar_array = A_bar.toArray();
             
             // Solve the saddle point system to find the correction
@@ -332,24 +340,19 @@ export function projectOntoConstraintSet(
                 STABILIZATION_CONFIG.limitCorrectionMagnitude && 
                 correctionNorm > STABILIZATION_CONFIG.maxCorrectionNorm) {
                 
+                console.log(`Limiting large correction (${correctionNorm} -> ${STABILIZATION_CONFIG.maxCorrectionNorm})`);
                 const scaleFactor = STABILIZATION_CONFIG.maxCorrectionNorm / correctionNorm;
                 finalCorrection = correction.map(val => val * scaleFactor);
-                console.log(`Limiting large correction: ${correctionNorm} -> ${STABILIZATION_CONFIG.maxCorrectionNorm}`);
             }
             
             // Apply damping if enabled
-            if (STABILIZATION_CONFIG.useStabilization && STABILIZATION_CONFIG.useDamping && dampingFactor < 1.0) {
-                const dampedCorrection = finalCorrection.map(val => val * dampingFactor);
-                finalCorrection = dampedCorrection;
-                const dampedNorm = math.norm(finalCorrection);
-                console.log(`Applying damped correction with magnitude: ${dampedNorm} (damping=${dampingFactor})`);
+            if (STABILIZATION_CONFIG.useStabilization && STABILIZATION_CONFIG.useDamping) {
+                console.log(`Applying damping factor: ${dampingFactor}`);
+                finalCorrection = finalCorrection.map(val => val * dampingFactor);
             }
             
             // Save vertices for potential backtracking
-            let verticesBeforeCorrection = null;
-            if (STABILIZATION_CONFIG.useStabilization && STABILIZATION_CONFIG.useBacktracking) {
-                verticesBeforeCorrection = projectedVertices.map(v => [...v]);
-            }
+            const verticesBeforeCorrection = projectedVertices.map(v => [...v]);
             
             // Apply the correction to vertices
             for (let i = 0; i < projectedVertices.length; i++) {
@@ -367,22 +370,27 @@ export function projectOntoConstraintSet(
                     projectedVertices = verticesBeforeCorrection;
                     
                     // Reduce damping for next iteration to be more conservative
-                    if (iter < maxIterations - 1) {
-                        dampingFactor *= 0.5;
-                    }
+                    dampingFactor *= 0.5;
+                    console.log(`Reduced damping factor to ${dampingFactor}`);
                 }
             }
             
         } catch (error) {
-            console.error("Error building A_bar or solving system:", error);
-            console.log("===== PROJECT ONTO CONSTRAINT SET - END WITH ERROR =====");
-            throw error;
+            console.error("Error in constraint projection iteration:", error);
+            // Fall back to best solution so far
+            projectedVertices = bestVertices;
+            break;
         }
     }
     
-    // Final evaluation of constraints
+    // Return best solution found if final iteration wasn't better
     const finalViolation = math.norm(evaluate(projectedVertices, constraints));
-    console.log(`Final constraint violation after projection: ${finalViolation}`);
+    if (finalViolation > bestViolation) {
+        console.log(`Final solution (violation=${finalViolation}) is worse than best found (violation=${bestViolation}), returning best solution`);
+        projectedVertices = bestVertices;
+    }
+    
+    console.log(`Final constraint violation after projection: ${math.norm(evaluate(projectedVertices, constraints))}`);
     console.log("===== PROJECT ONTO CONSTRAINT SET - END =====");
     
     return projectedVertices;

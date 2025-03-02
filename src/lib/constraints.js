@@ -97,12 +97,15 @@ export function evaluateConstraints(vertices, constraints, edges = []) {
         const targetBarycenter = constraints.barycenterTarget || [0, 0];
         const currentBarycenter = calculateBarycenter(vertices, edges, true);
         
-        // Constraint is defined as: ∑_{I∈E} ℓ_I (x_I - x₀) = 0
-        // This is equivalent to: currentBarycenter - targetBarycenter = 0
-        constraintValues.push(currentBarycenter[0] - targetBarycenter[0]);
-        constraintValues.push(currentBarycenter[1] - targetBarycenter[1]);
+        // Get scaling factor for better numerical conditioning
+        const scalingFactor = get(config).barycenterScaling || 0.01;
         
-        console.log(`Barycenter constraint: current=[${currentBarycenter}], target=[${targetBarycenter}], violation=[${constraintValues.slice(-2)}]`);
+        // Constraint is defined as: ∑_{I∈E} ℓ_I (x_I - x₀) = 0
+        // This is equivalent to: (currentBarycenter - targetBarycenter) * scalingFactor = 0
+        constraintValues.push((currentBarycenter[0] - targetBarycenter[0]) * scalingFactor);
+        constraintValues.push((currentBarycenter[1] - targetBarycenter[1]) * scalingFactor);
+        
+        console.log(`Barycenter constraint: current=[${currentBarycenter}], target=[${targetBarycenter}], scaled violation=[${constraintValues.slice(-2)}]`);
     }
     
     // Length constraint
@@ -121,10 +124,14 @@ export function evaluateConstraints(vertices, constraints, edges = []) {
         
         const currentLength = calculateTotalLength(vertices, edges);
         
-        // Constraint is defined as: L^0 - ∑_{I∈E} ℓ_I = 0
-        constraintValues.push(targetLength - currentLength);
+        // Get scaling factor for better numerical conditioning
+        const scalingFactor = get(config).lengthScaling || 0.001;
+        console.log(`Using length stabilization factor: ${scalingFactor}`);
         
-        console.log(`Length constraint: current=${currentLength.toFixed(2)}, target=${targetLength.toFixed(2)}, violation=${(targetLength - currentLength).toFixed(2)}`);
+        // Constraint is defined as: (L^0 - ∑_{I∈E} ℓ_I) * scalingFactor = 0
+        constraintValues.push((targetLength - currentLength) * scalingFactor);
+        
+        console.log(`Length constraint: current=${currentLength.toFixed(2)}, target=${targetLength.toFixed(2)}, scaled violation=${((targetLength - currentLength) * scalingFactor).toFixed(4)}`);
     }
     
     return constraintValues;
@@ -169,8 +176,9 @@ export function buildConstraintJacobian(vertices, constraints, edges = []) {
         }
         
         // Scale factor for the Jacobian to improve numerical stability
-        // This helps prevent the large gradients issue mentioned
-        const stabilizationFactor = get(config).barycenterStabilization || 0.01;
+        const stabilizationFactor = get(config).barycenterScaling || 0.01;
+        
+        console.log(`Using barycenter stabilization factor: ${stabilizationFactor}`);
         
         // For each edge, compute how vertices affect the weighted barycenter
         for (let i = 0; i < edges.length; i++) {
@@ -198,8 +206,10 @@ export function buildConstraintJacobian(vertices, constraints, edges = []) {
         jacobian.push(xRow);
         jacobian.push(yRow);
         
-        console.log(`Barycenter Jacobian: x-row has ${xRow.filter(v => v !== 0).length} non-zero entries`);
-        console.log(`Barycenter Jacobian: y-row has ${yRow.filter(v => v !== 0).length} non-zero entries`);
+        // Log max values for diagnostics
+        const xRowMax = Math.max(...xRow.map(Math.abs));
+        const yRowMax = Math.max(...yRow.map(Math.abs));
+        console.log(`Barycenter Jacobian: x-row max value=${xRowMax}, y-row max value=${yRowMax}`);
     }
     
     // Length constraint Jacobian
@@ -210,7 +220,9 @@ export function buildConstraintJacobian(vertices, constraints, edges = []) {
         const lengthRow = new Array(numVertices * 2).fill(0);
         
         // Scale factor for the Jacobian to improve numerical stability
-        const stabilizationFactor = get(config).lengthStabilization || 0.01;
+        const stabilizationFactor = get(config).lengthScaling || 0.001;
+        
+        console.log(`Using length stabilization factor: ${stabilizationFactor}`);
         
         // For each edge, calculate derivatives of length with respect to vertices
         for (const [v1, v2] of edges) {
@@ -241,7 +253,9 @@ export function buildConstraintJacobian(vertices, constraints, edges = []) {
         // Add row to the Jacobian
         jacobian.push(lengthRow);
         
-        console.log(`Length Jacobian: row has ${lengthRow.filter(v => v !== 0).length} non-zero entries`);
+        // Log max value for diagnostics
+        const lengthRowMax = Math.max(...lengthRow.map(Math.abs));
+        console.log(`Length Jacobian: max value=${lengthRowMax}, non-zero entries=${lengthRow.filter(v => v !== 0).length}`);
     }
     
     return jacobian;
@@ -271,6 +285,7 @@ export function createConstraintData(vertices, constraints, edges) {
         // Build Jacobian
         const jacobian = buildConstraintJacobian(vertices, constraints, edges);
         
+        // Return object with constraint data and functions to re-evaluate
         return {
             values,
             jacobian,
@@ -287,7 +302,6 @@ export function createConstraintData(vertices, constraints, edges) {
         };
     }
 }
-
 
 // Export relevant constraint types for reference
 export const ConstraintTypes = {
