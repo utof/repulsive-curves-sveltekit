@@ -13,8 +13,7 @@ import { updateKernelState } from '$lib/graphState';
 
 // Import the constraint functionality
 import { 
-    createConstraintData,
-    simpleBarycenterEnforcement
+    createConstraintData
 } from '$lib/constraints';
 
 // Import constraint projection operations
@@ -28,12 +27,14 @@ const GRADIENT_METHODS = {
     L2: 'l2',
     PRECONDITIONED: 'preconditioned'
 };
+const annealing = false;
+const gradCap = false;
 
 // Default optimization settings
 let optimizationConfig = {
     gradientMethod: GRADIENT_METHODS.PRECONDITIONED,
     constraints: {
-        barycenter: true,            // Fix curve barycenter
+        barycenter: false,            // Fix curve barycenter
         barycenterTarget: [300, 300]  // Target barycenter position
     },
     // Control whether to use full constraint projection from the paper
@@ -174,8 +175,8 @@ function performLineSearch(
         const stepVertices = takeFixedStep(vertices, direction, t);
         console.log(`Line search iteration ${i+1}/${maxIterations}, step size t=${t.toFixed(6)}`);
         
-        // Apply constraint projection
-        if (optimizationConfig.useFullConstraintProjection && constraintData.values.length > 0) {
+        // Apply constraint projection only if there are active constraints
+        if (optimizationConfig.useFullConstraintProjection && constraintData.values && constraintData.values.length > 0) {
             // Use full constraint projection from the paper (Section 5.3.2)
             console.log("Using full constraint projection in line search");
             
@@ -183,7 +184,6 @@ function performLineSearch(
             const sobolevParams = { alpha, beta };
             
             try {
-                // IMPORTANT: Explicitly pass edges as a separate parameter
                 newVertices = projectOntoConstraintSet(
                     stepVertices,
                     edges,  // Key fix: edges passed directly here
@@ -196,8 +196,9 @@ function performLineSearch(
                 throw error;
             }
         } else {
-            console.error("Full constraint projection is required");
-            throw new Error("Full constraint projection must be enabled");
+            // No active constraints, just use the vertices after step
+            console.log("No active constraints, skipping projection");
+            newVertices = stepVertices;
         }
         
         // Check if step is acceptable
@@ -238,8 +239,16 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
     
     // Create constraint data for projection
     const constraintData = createConstraintData(vertices, constraints, edges);
-    console.log(`Active constraints: ${Object.keys(constraints).filter(k => constraints[k]).join(', ')}`);
-    console.log(`Constraint values: [${constraintData.values.join(', ')}]`);
+    
+    // Check if there are any active constraints
+    const hasActiveConstraints = constraintData.values && constraintData.values.length > 0;
+    
+    if (hasActiveConstraints) {
+        console.log(`Active constraints: ${Object.keys(constraints).filter(k => constraints[k]).join(', ')}`);
+        console.log(`Constraint values: [${constraintData.values.join(', ')}]`);
+    } else {
+        console.log("No active constraints");
+    }
     
     // 1. Compute gradient and direction
     const { gradient, direction, differential } = computeGradient(
@@ -254,7 +263,7 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
     // 2. Project gradient onto constraint tangent space (Section 5.3.1 of the paper)
     let projectedDirection;
     
-    if (optimizationConfig.useFullConstraintProjection && constraintData.values.length > 0) {
+    if (optimizationConfig.useFullConstraintProjection && hasActiveConstraints) {
         // Use full saddle point system from the paper
         console.log("Using full gradient projection");
         const flatDirection = flattenVectors(direction);
@@ -263,7 +272,6 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
         const sobolevParams = { alpha, beta };
         
         try {
-            // CRITICAL FIX: Pass edges as a separate parameter
             const projectedFlat = projectGradient(
                 flatDirection,
                 vertices,
@@ -279,19 +287,26 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
             throw new Error("Constraint projection failed: " + error.message);
         }
     } else {
-        console.error("Full gradient projection is required");
-        throw new Error("Full gradient projection must be enabled");
+        // No constraints to project against, use original direction
+        console.log("No constraints to project against, using original direction");
+        projectedDirection = direction;
     }
     
     // Log the magnitude of the projected direction
     const dirMagnitude = math.norm(flattenVectors(projectedDirection));
     console.log(`Projected direction magnitude: ${dirMagnitude.toFixed(6)}`);
     
+    // CRITICAL FIX: Limit step size for stability
+    const MAX_STEP_MAGNITUDE = 1000.0;
+    
     // If direction is too small, we might be at a local minimum
-    if (dirMagnitude < 1e-10) {
-        console.log("Direction magnitude is near zero, possible local minimum reached");
+    if (dirMagnitude < 1e-6) {
+        console.log("Direction magnitude is very small, possible local minimum reached");
         return vertices.map(v => [...v]);  // Return copy of current vertices
     }
+    
+    // ADD: Detect oscillation by tracking the angle between consecutive directions
+    // This would require storing the previous direction - can be added if needed
     
     // 3. Take step (either fixed or with line search)
     if (useLineSearch) {
@@ -315,25 +330,43 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
         );
     } else {
         // Fixed step size based on gradient method
-        const stepSize = optimizationConfig.gradientMethod === GRADIENT_METHODS.PRECONDITIONED
+        let stepSize = optimizationConfig.gradientMethod === GRADIENT_METHODS.PRECONDITIONED
             ? get(config).precondStepSize
             : get(config).l2StepSize;
-            
+        
+        // CRITICAL FIX: Add adaptive step size scaling based on direction magnitude
+        if (gradCap) {
+            if (dirMagnitude * stepSize > MAX_STEP_MAGNITUDE) {
+                const oldStepSize = stepSize;
+                stepSize = MAX_STEP_MAGNITUDE / dirMagnitude;
+                console.log(`Reducing step size for stability: ${oldStepSize} -> ${stepSize}`);
+            }
+        }
+        
+        // ANNEALING: Gradually reduce step size over iterations to help convergence
+        if (annealing) {
+            const currentIteration = optimizationConfig.currentIteration || 0;
+            if (currentIteration > 20) {
+                const annealingFactor = Math.max(0.2, 1.0 - (currentIteration - 20) / 100);
+                stepSize *= annealingFactor;
+                console.log(`Annealing step size: ${stepSize} (factor: ${annealingFactor})`);
+            }
+        }
+        
         console.log(`Taking fixed step with size ${stepSize}`);
         const newVertices = takeFixedStep(vertices, projectedDirection, stepSize);
         
-        // Apply constraint projection (Section 5.3.2 of the paper)
-        if (optimizationConfig.useFullConstraintProjection && constraintData.values.length > 0) {
+        // Apply constraint projection only if there are active constraints
+        if (optimizationConfig.useFullConstraintProjection && hasActiveConstraints) {
             console.log("Applying full constraint projection after step");
             
             // Define parameters for projection
             const sobolevParams = { alpha, beta };
             
             try {
-                // CRITICAL FIX: Pass edges as a separate parameter
                 return projectOntoConstraintSet(
                     newVertices,
-                    edges,  // Pass edges explicitly
+                    edges,
                     constraints,
                     constraintData,
                     sobolevParams
@@ -343,8 +376,9 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
                 throw error;
             }
         } else {
-            console.error("Full constraint projection is required");
-            throw new Error("Full constraint projection must be enabled");
+            // No constraints to project against, return vertices as is
+            console.log("No constraints to project against, skipping projection");
+            return newVertices;
         }
     }
 }
@@ -392,6 +426,9 @@ export function createOptimizer(
         step: () => {
             if (currentIteration < maxIterations) {
                 console.log(`\n--- Iteration ${currentIteration + 1}/${maxIterations} ---`);
+                
+                // Store current iteration for adaptive strategies
+                optimizationConfig.currentIteration = currentIteration;
                 
                 try {
                     // Ensure edges is a proper array before passing it

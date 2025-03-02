@@ -10,6 +10,10 @@ WHAT IS LINE SEARCH??
 project constraints kinda works but how does it work
 
 what if find the subvertices that cause the most amount of energy (the intersecting ones) and kinda disable them to allow nonplanar graphs to not be crazy? 
+
+
+
+
 # todo:
 
 ## plugin system
@@ -28,7 +32,7 @@ console log only every 1 sec or at the end of operations
 constraint to never exceed total length of the graph?
 [ ] api
 
-### controls
+### controls and config
 
 - [ ] alpha, beta slider.
       -- [ ] some auto way to determine parameters
@@ -38,6 +42,8 @@ constraint to never exceed total length of the graph?
 
 [ ] move controls out of the way
 
+#### config 
+[ ] hardgradcap e.g. 1000 magnitude cap or 100% of the average or something or calculate % based on complexity of vertices and edges
 ### ui
 
 nicer controls ui
@@ -49,6 +55,7 @@ nicer controls ui
 [ ] apply perturbation function should be in utils or something
 [ ] projectConstraints, enforceBarycenter need to be in constraint file
 [ ] include subvertices energies condition inside the differential, not as a sep funciton
+[ ] logging within the app like last energy, gradient magnitude, arrows of general translation of barycenter or something etc etc
 
 #### generalizations 
 [ ] define general graph in graphutils to not prevent modifying all the graphs when new feature is created.
