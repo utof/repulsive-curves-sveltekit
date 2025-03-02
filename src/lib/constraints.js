@@ -202,48 +202,6 @@ export function createConstraintData(vertices, constraints, edges) {
     }
 }
 
-/**
- * Simplified barycenter enforcement (used as fallback when full projection fails)
- * Simply translates all vertices to match target barycenter
- * 
- * @param {Array} vertices - Vertex positions
- * @param {Array} edges - Edge connections
- * @param {Array} targetBarycenter - Target barycenter position
- * @returns {Array} - Translated vertices
- */
-export function simpleBarycenterEnforcement(vertices, edges, targetBarycenter) {
-    try {
-        console.log("Applying simple barycenter enforcement");
-        
-        // Make a copy of vertices
-        const result = vertices.map(v => [...v]);
-        
-        // Calculate current barycenter
-        const currentBarycenter = calculateBarycenter(result, edges, true);
-        
-        // Calculate translation needed
-        const dx = targetBarycenter[0] - currentBarycenter[0];
-        const dy = targetBarycenter[1] - currentBarycenter[1];
-        
-        if (!isFinite(dx) || !isFinite(dy)) {
-            console.error("Invalid translation vector", { dx, dy });
-            return result;
-        }
-        
-        console.log(`Barycenter translation: (${dx.toFixed(4)}, ${dy.toFixed(4)})`);
-        
-        // Apply translation to all vertices
-        for (let i = 0; i < result.length; i++) {
-            result[i][0] += dx;
-            result[i][1] += dy;
-        }
-        
-        return result;
-    } catch (error) {
-        console.error("Error in simpleBarycenterEnforcement:", error);
-        return vertices.map(v => [...v]);
-    }
-}
 
 // Export relevant constraint types for reference
 export const ConstraintTypes = {

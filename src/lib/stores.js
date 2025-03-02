@@ -8,9 +8,9 @@ export const config = writable({
 	tauInitial: 1.0,
 	aConst: 0.1,
 	bConst: 0.5,
-	constraintTolerance: 1e-4,
+	constraintTolerance: 1e-2,
 	differentialMethod: 'finiteDifference',
-    precondStepSize: 0.5,
+    precondStepSize: 0.000005,
     l2StepSize: 100000,
     applyPerturbation: false,
     subvertexGap: 100, // Desired gap distance between subvertices (pixels)

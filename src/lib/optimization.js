@@ -34,7 +34,7 @@ const gradCap = false;
 let optimizationConfig = {
     gradientMethod: GRADIENT_METHODS.PRECONDITIONED,
     constraints: {
-        barycenter: false,            // Fix curve barycenter
+        barycenter: true,            // Fix curve barycenter
         barycenterTarget: [300, 300]  // Target barycenter position
     },
     // Control whether to use full constraint projection from the paper
