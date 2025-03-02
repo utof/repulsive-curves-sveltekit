@@ -6,17 +6,20 @@ import { GradientMethods } from './optimization'; // Import gradient method cons
 export const config = writable({
     // Numerical stability parameters
     epsilonStability: 1e-7,
-    epsilonKernel: 1e-6,
-    finiteDiffH: 1e-4,
-    constraintTolerance: 1e-2,
+    epsilonKernel: 1e-7,
+    finiteDiffH: 1e-7,
+    constraintTolerance: 1e-4,
     differentialMethod: 'finiteDifference',
+    maxConstraintIterations: 10,
+
+    barycenterScaling: 1,
+    lengthScaling: 1,
     
     // Line search parameters
     tauInitial: 1.0,
     aConst: 0.1,
     bConst: 0.5,
     maxLineSearch: 20,
-    maxConstraintIterations: 3,
     
     // Runtime parameters
     applyPerturbation: false,
@@ -41,7 +44,7 @@ export const optimizationConfig = writable({
     
     // Step size control
     useLineSearch: false,
-    precondStepSize: 0.000005,
+    precondStepSize: 1e-1,
     l2StepSize: 100000,
     
     // Constraint settings
@@ -51,7 +54,7 @@ export const optimizationConfig = writable({
             target: [300, 300]
         },
         length: {
-            enabled: false,
+            enabled: true,
             usePercentage: true,
             percentage: 100,
             absoluteValue: 0
@@ -64,7 +67,7 @@ export const optimizationConfig = writable({
     
     // Constraint stabilization factors
     barycenterStabilization: 0.01,
-    lengthStabilization: 0.01,
+    lengthStabilization: 1,
     
     // Current iteration (used for adaptive strategies)
     currentIteration: 0
