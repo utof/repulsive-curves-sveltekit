@@ -5,90 +5,221 @@ import * as math from 'mathjs';
 import { calculateEdgeProperties } from './energyCalculations';
 
 /**
- * Enforces barycenter constraint on vertices
- * 
- * According to the paper, the barycenter constraint is defined as:
- * Φ_barycenter(γ) := ∑_{I∈E} ℓ_I (x_I - x₀) = 0
- * 
- * Where:
- * - γ is the curve (vertices)
- * - E is the set of edges
- * - ℓ_I is the length of edge I
- * - x_I is the midpoint of edge I
- * - x₀ is the target barycenter position
- * 
- * This constraint ensures that the weighted average of edge midpoints 
- * (weighted by edge length) stays at the specified target position x₀.
+ * Calculates the barycenter of the curve with weighted edges
  *
  * @param {Array} vertices - Vertex positions
  * @param {Array} edges - Edge connections
- * @param {Object} options - Barycenter options
- * @returns {Array} - Vertices with enforced barycenter
+ * @param {boolean} weighted - Whether to weight by edge lengths
+ * @returns {Array} - Barycenter position [x, y]
  */
-export function enforceBarycenter(vertices, edges, options = {}) {
+export function calculateBarycenter(vertices, edges, weighted = true) {
     try {
-        console.log("Enforcing barycenter constraint");
+        console.log("Calculating barycenter");
+        // Calculate edge properties if using weighted barycenter
+        const { edgeLengths, edgeMidpoints } = weighted ? 
+            calculateEdgeProperties(vertices, edges) : { edgeLengths: [], edgeMidpoints: [] };
         
-        const {
-            targetBarycenter = [0, 0],
-            weighted = true
-        } = options;
-        
-        // Make a copy of vertices to avoid mutating the original
-        const projectedVertices = vertices.map(v => [...v]);
-        
-        // Calculate edge properties - lengths and midpoints
-        const { edgeLengths, edgeMidpoints } = calculateEdgeProperties(projectedVertices, edges);
-        
-        if (!edgeLengths || !edgeMidpoints) {
-            console.error("Failed to calculate edge properties", { edgeLengths, edgeMidpoints });
-            return projectedVertices;
-        }
-        
-        // Current barycenter calculation
-        let currentBarycenter = [0, 0];
+        let barycenter = [0, 0];
         let totalWeight = 0;
         
-        if (weighted) {
-            // Use edge-length-weighted barycenter as defined in the paper:
-            // Barycenter = ∑_{I∈E} ℓ_I × x_I / ∑_{I∈E} ℓ_I
+        if (weighted && edgeLengths && edgeMidpoints) {
+            // Weighted by edge lengths as in the paper:
+            // Φ_barycenter(γ) := ∑_{I∈E} ℓ_I (x_I - x₀)
             for (let i = 0; i < edges.length; i++) {
                 const weight = edgeLengths[i];
+                if (!isFinite(weight) || weight <= 0) continue;
                 
-                if (weight <= 0 || !isFinite(weight)) {
-                    console.warn(`Invalid edge length for edge ${i}: ${weight}`);
-                    continue;
-                }
-                
-                if (!edgeMidpoints[i] || edgeMidpoints[i].some(v => !isFinite(v))) {
-                    console.warn(`Invalid midpoint for edge ${i}: ${edgeMidpoints[i]}`);
-                    continue;
-                }
-                
-                currentBarycenter[0] += edgeMidpoints[i][0] * weight;
-                currentBarycenter[1] += edgeMidpoints[i][1] * weight;
+                barycenter[0] += edgeMidpoints[i][0] * weight;
+                barycenter[1] += edgeMidpoints[i][1] * weight;
                 totalWeight += weight;
             }
         } else {
-            // Alternative: Use simple vertex average (not from the paper)
-            for (const v of projectedVertices) {
-                if (!v || v.some(coord => !isFinite(coord))) {
-                    console.warn("Skipping invalid vertex:", v);
-                    continue;
-                }
-                currentBarycenter[0] += v[0];
-                currentBarycenter[1] += v[1];
+            // Simple vertex average (fallback)
+            for (const v of vertices) {
+                if (!v || v.some(coord => !isFinite(coord))) continue;
+                barycenter[0] += v[0];
+                barycenter[1] += v[1];
+                totalWeight += 1;
             }
-            totalWeight = projectedVertices.length;
         }
         
         if (totalWeight <= 0) {
-            console.error("Total weight is zero or negative, cannot enforce barycenter", { totalWeight });
-            return projectedVertices;
+            console.error("Total weight is zero or negative in barycenter calculation");
+            return [0, 0]; // Fallback
         }
         
-        currentBarycenter[0] /= totalWeight;
-        currentBarycenter[1] /= totalWeight;
+        barycenter[0] /= totalWeight;
+        barycenter[1] /= totalWeight;
+        
+        return barycenter;
+    } catch (error) {
+        console.error("Error in calculateBarycenter:", error);
+        return [0, 0]; // Fallback
+    }
+}
+
+/**
+ * Evaluates all constraints for the given vertices
+ * Returns a flattened array of constraint values
+ *
+ * @param {Array} vertices - Vertex positions
+ * @param {Object} constraints - Constraint configuration
+ * @param {Array} edges - Edge connections (optional)
+ * @returns {Array} - Constraint values as a flat array
+ */
+export function evaluateConstraints(vertices, constraints, edges = []) {
+    const constraintValues = [];
+    
+    // Barycenter constraint
+    if (constraints.barycenter) {
+        console.log("Evaluating barycenter constraint");
+        const targetBarycenter = constraints.barycenterTarget || [0, 0];
+        const currentBarycenter = calculateBarycenter(vertices, edges, true);
+        
+        // Constraint is defined as: ∑_{I∈E} ℓ_I (x_I - x₀) = 0
+        // This is equivalent to: currentBarycenter - targetBarycenter = 0
+        constraintValues.push(currentBarycenter[0] - targetBarycenter[0]);
+        constraintValues.push(currentBarycenter[1] - targetBarycenter[1]);
+        
+        console.log(`Barycenter constraint: current=[${currentBarycenter}], target=[${targetBarycenter}], violation=[${constraintValues}]`);
+    }
+    
+    // Length constraint - currently not implemented but would be added here
+    
+    return constraintValues;
+}
+
+/**
+ * Builds the Jacobian matrix for all constraints
+ * Each constraint contributes one or more rows to the matrix
+ *
+ * @param {Array} vertices - Vertex positions
+ * @param {Object} constraints - Constraint configuration 
+ * @param {Array} edges - Edge connections (optional)
+ * @returns {Array} - Jacobian matrix C where C[i][j] = ∂Φᵢ/∂γⱼ
+ */
+export function buildConstraintJacobian(vertices, constraints, edges = []) {
+    const numVertices = vertices.length;
+    const jacobian = [];
+    
+    // Barycenter constraint
+    if (constraints.barycenter) {
+        console.log("Building Jacobian for barycenter constraint");
+        
+        // The barycenter constraint has 2 components (x and y)
+        // For each component, we need a row in the Jacobian
+        
+        // For the x-component of barycenter constraint
+        const xRow = new Array(numVertices * 2).fill(0);
+        
+        // For the y-component of barycenter constraint
+        const yRow = new Array(numVertices * 2).fill(0);
+        
+        // Calculate total weight for normalization
+        const { edgeLengths } = calculateEdgeProperties(vertices, edges);
+        const totalWeight = edgeLengths.reduce((sum, len) => sum + (isFinite(len) ? len : 0), 0);
+        
+        if (totalWeight <= 0) {
+            console.error("Total weight is zero or negative in Jacobian calculation");
+            // Add zero rows as fallback
+            jacobian.push(xRow);
+            jacobian.push(yRow);
+            return jacobian;
+        }
+        
+        // We need to determine how the barycenter changes when each vertex moves
+        // For a weighted barycenter, each vertex contributes based on its edges
+        for (let i = 0; i < edges.length; i++) {
+            const [v1, v2] = edges[i];
+            const weight = edgeLengths[i] / totalWeight / 2; // Divided by 2 because each vertex contributes half to the midpoint
+            
+            if (!isFinite(weight)) continue;
+            
+            // Vertex v1 affects x-coordinate of barycenter
+            xRow[v1 * 2] += weight;
+            
+            // Vertex v1 affects y-coordinate of barycenter
+            yRow[v1 * 2 + 1] += weight;
+            
+            // Vertex v2 affects x-coordinate of barycenter
+            xRow[v2 * 2] += weight;
+            
+            // Vertex v2 affects y-coordinate of barycenter
+            yRow[v2 * 2 + 1] += weight;
+        }
+        
+        // Add the rows to the Jacobian
+        jacobian.push(xRow);
+        jacobian.push(yRow);
+        
+        console.log(`Barycenter Jacobian: x-row has ${xRow.filter(v => v !== 0).length} non-zero entries`);
+        console.log(`Barycenter Jacobian: y-row has ${yRow.filter(v => v !== 0).length} non-zero entries`);
+    }
+    
+    // Length constraint Jacobian would be added here
+    
+    return jacobian;
+}
+
+/**
+ * Creates a constraint data object containing all information needed for constraint handling
+ *
+ * @param {Array} vertices - Vertex positions
+ * @param {Object} constraints - Constraint configuration
+ * @param {Array} edges - Edge connections
+ * @returns {Object} - Constraint data including values and Jacobian
+ */
+export function createConstraintData(vertices, constraints, edges) {
+    try {
+        console.log("Creating constraint data");
+        
+        // Validate edges parameter
+        if (!edges || !Array.isArray(edges)) {
+            console.error("Invalid edges parameter:", edges);
+            edges = [];
+        }
+        
+        // Evaluate constraints
+        const values = evaluateConstraints(vertices, constraints, edges);
+        
+        // Build Jacobian
+        const jacobian = buildConstraintJacobian(vertices, constraints, edges);
+        
+        return {
+            values,
+            jacobian,
+            evaluate: (v, c) => evaluateConstraints(v, c, edges),
+            buildJacobian: (v, c) => buildConstraintJacobian(v, c, edges)
+        };
+    } catch (error) {
+        console.error("Error creating constraint data:", error);
+        return {
+            values: [],
+            jacobian: [],
+            evaluate: () => [],
+            buildJacobian: () => []
+        };
+    }
+}
+
+/**
+ * Simplified barycenter enforcement (used as fallback when full projection fails)
+ * Simply translates all vertices to match target barycenter
+ * 
+ * @param {Array} vertices - Vertex positions
+ * @param {Array} edges - Edge connections
+ * @param {Array} targetBarycenter - Target barycenter position
+ * @returns {Array} - Translated vertices
+ */
+export function simpleBarycenterEnforcement(vertices, edges, targetBarycenter) {
+    try {
+        console.log("Applying simple barycenter enforcement");
+        
+        // Make a copy of vertices
+        const result = vertices.map(v => [...v]);
+        
+        // Calculate current barycenter
+        const currentBarycenter = calculateBarycenter(result, edges, true);
         
         // Calculate translation needed
         const dx = targetBarycenter[0] - currentBarycenter[0];
@@ -96,111 +227,30 @@ export function enforceBarycenter(vertices, edges, options = {}) {
         
         if (!isFinite(dx) || !isFinite(dy)) {
             console.error("Invalid translation vector", { dx, dy });
-            return projectedVertices;
+            return result;
         }
         
         console.log(`Barycenter translation: (${dx.toFixed(4)}, ${dy.toFixed(4)})`);
         
         // Apply translation to all vertices
-        for (let i = 0; i < projectedVertices.length; i++) {
-            projectedVertices[i][0] += dx;
-            projectedVertices[i][1] += dy;
+        for (let i = 0; i < result.length; i++) {
+            result[i][0] += dx;
+            result[i][1] += dy;
         }
         
-        return projectedVertices;
+        return result;
     } catch (error) {
-        console.error("Error in enforceBarycenter:", error);
-        // Return the original vertices if there's an error
+        console.error("Error in simpleBarycenterEnforcement:", error);
         return vertices.map(v => [...v]);
     }
 }
 
-/**
- * Applies constraints in sequence
- * Currently only the barycenter constraint is implemented
- * 
- * @param {Array} vertices - Vertex positions
- * @param {Array} edges - Edge connections
- * @param {Object} constraints - Constraint configuration
- * @param {Object} additionalData - Additional data for constraints
- * @returns {Array} - Vertices after applying all constraints
- */
-export function applyConstraints(vertices, edges, constraints, additionalData = {}) {
-    let result = vertices.map(v => [...v]);
-    
-    // Apply barycenter constraint if enabled
-    if (constraints.barycenter) {
-        console.log(`Applying barycenter constraint: ${JSON.stringify(constraints.barycenterTarget)}`);
-        result = enforceBarycenter(result, edges, {
-            targetBarycenter: constraints.barycenterTarget || [0, 0],
-            weighted: true
-        });
-    }
-    
-    return result;
-}
-
-/**
- * Projects gradient onto the tangent space of the barycenter constraint
- * 
- * Section 5.3.1 in the paper describes this as finding a descent direction
- * that is tangent to the constraint set.
- * 
- * For the barycenter constraint, this means removing any component of the 
- * gradient that would change the barycenter.
- *
- * @param {Array} gradient - Gradient to project
- * @param {Array} vertices - Current vertex positions
- * @param {Array} edges - Edge connections
- * @param {Object} constraints - Active constraints configuration
- * @returns {Array} - Projected gradient
- */
-export function projectGradientOntoConstraints(gradient, vertices, edges, constraints) {
-    try {
-        // If no barycenter constraint, return the original gradient
-        if (!constraints.barycenter) {
-            return gradient.map(g => [...g]);
-        }
-        
-        console.log("Projecting gradient onto barycenter constraint tangent space");
-        
-        // Make a copy of the gradient
-        let projectedGradient = gradient.map(g => [...g]);
-        
-        // For barycenter constraint, we need to remove the translation component
-        // Calculate average gradient (translation component)
-        const avgGradient = [0, 0];
-        let validGradientCount = 0;
-        
-        for (const g of projectedGradient) {
-            if (!g || g.some(v => !isFinite(v))) {
-                console.warn("Skipping invalid gradient component:", g);
-                continue;
-            }
-            avgGradient[0] += g[0];
-            avgGradient[1] += g[1];
-            validGradientCount++;
-        }
-        
-        if (validGradientCount === 0) {
-            console.error("No valid gradient components found");
-            return gradient.map(g => [...g]); // Return original gradient
-        }
-        
-        avgGradient[0] /= validGradientCount;
-        avgGradient[1] /= validGradientCount;
-        
-        console.log(`Translation component to remove: (${avgGradient[0].toFixed(6)}, ${avgGradient[1].toFixed(6)})`);
-        
-        // Subtract translation component from all gradients
-        for (let i = 0; i < projectedGradient.length; i++) {
-            projectedGradient[i][0] -= avgGradient[0];
-            projectedGradient[i][1] -= avgGradient[1];
-        }
-        
-        return projectedGradient;
-    } catch (error) {
-        console.error("Error in projectGradientOntoConstraints:", error);
-        return gradient.map(g => [...g]); // Return original gradient on error
-    }
-}
+// Export relevant constraint types for reference
+export const ConstraintTypes = {
+    BARYCENTER: 'barycenter',
+    LENGTH: 'length',
+    EDGE_LENGTH: 'edge_length',
+    POINT: 'point',
+    SURFACE: 'surface',
+    TANGENT: 'tangent'
+};

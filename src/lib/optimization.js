@@ -11,11 +11,17 @@ import { get } from 'svelte/store';
 import { config } from '$lib/stores';
 import { updateKernelState } from '$lib/graphState';
 
-// Import the simplified constraint functionality
+// Import the constraint functionality
 import { 
-    applyConstraints, 
-    projectGradientOntoConstraints
+    createConstraintData,
+    simpleBarycenterEnforcement
 } from '$lib/constraints';
+
+// Import constraint projection operations
+import {
+    projectGradient,
+    projectOntoConstraintSet
+} from '$lib/constraintProjection';
 
 // Configuration for available gradient methods
 const GRADIENT_METHODS = {
@@ -23,14 +29,39 @@ const GRADIENT_METHODS = {
     PRECONDITIONED: 'preconditioned'
 };
 
-// Default optimization settings - simplified to only include barycenter constraint
+// Default optimization settings
 let optimizationConfig = {
     gradientMethod: GRADIENT_METHODS.PRECONDITIONED,
     constraints: {
         barycenter: true,            // Fix curve barycenter
         barycenterTarget: [300, 300]  // Target barycenter position
-    }
+    },
+    // Control whether to use full constraint projection from the paper
+    useFullConstraintProjection: true
 };
+
+/**
+ * Flatten 2D array of vectors into a single 1D array
+ * @param {Array} vectors - 2D array of vectors
+ * @returns {Array} - Flattened 1D array
+ */
+function flattenVectors(vectors) {
+    return vectors.flatMap(v => v);
+}
+
+/**
+ * Reshape a flattened array back into a 2D array of vectors
+ * @param {Array} flat - Flattened 1D array
+ * @param {number} dim - Dimension of each vector (2 for 2D)
+ * @returns {Array} - 2D array of vectors
+ */
+function reshapeToVectors(flat, dim = 2) {
+    const result = [];
+    for (let i = 0; i < flat.length; i += dim) {
+        result.push(flat.slice(i, i + dim));
+    }
+    return result;
+}
 
 /**
  * Compute gradient based on selected method
@@ -43,6 +74,9 @@ let optimizationConfig = {
  * @returns {Object} - Computed gradient and direction
  */
 function computeGradient(method, vertices, edges, alpha, beta, disjointPairs) {
+    console.log(`Computing gradient using ${method} method`);
+    console.log("Edges structure in computeGradient:", JSON.stringify(edges));
+    
     // Calculate differential (common to all methods)
     const differential = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
     
@@ -106,7 +140,7 @@ function takeFixedStep(vertices, direction, stepSize) {
 function performLineSearch(
     vertices, 
     edges, 
-    direction, 
+    direction,
     differential, 
     alpha, 
     beta, 
@@ -114,27 +148,64 @@ function performLineSearch(
     lineSearchSettings, 
     constraints
 ) {
-    const directionFlat = direction.flat();
-    const differentialFlat = differential.flat();
+    console.log("Performing line search with backtracking");
+    console.log("Edges structure in performLineSearch:", JSON.stringify(edges));
+    
+    // Prepare constraint data for projection
+    const constraintData = createConstraintData(vertices, constraints, edges);
+    
+    // Calculate directional derivative
+    const directionFlat = flattenVectors(direction);
+    const differentialFlat = flattenVectors(differential);
     const slope = math.dot(differentialFlat, directionFlat);
     
+    console.log(`Initial directional derivative (slope): ${slope.toFixed(6)}`);
+    
     const currentEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+    console.log(`Current energy: ${currentEnergy.toFixed(6)}`);
+    
     const { initialStepSize, decay, sufficientDecrease, maxIterations } = lineSearchSettings;
     
     let t = initialStepSize;
-    let newVertices;
+    let newVertices = null;
     
     for (let i = 0; i < maxIterations; i++) {
         // Take step
         const stepVertices = takeFixedStep(vertices, direction, t);
+        console.log(`Line search iteration ${i+1}/${maxIterations}, step size t=${t.toFixed(6)}`);
         
-        // Apply barycenter constraint
-        newVertices = applyConstraints(stepVertices, edges, constraints);
+        // Apply constraint projection
+        if (optimizationConfig.useFullConstraintProjection && constraintData.values.length > 0) {
+            // Use full constraint projection from the paper (Section 5.3.2)
+            console.log("Using full constraint projection in line search");
+            
+            // Define parameters for projection
+            const sobolevParams = { alpha, beta };
+            
+            try {
+                // IMPORTANT: Explicitly pass edges as a separate parameter
+                newVertices = projectOntoConstraintSet(
+                    stepVertices,
+                    edges,  // Key fix: edges passed directly here
+                    constraints,
+                    constraintData,
+                    sobolevParams
+                );
+            } catch (error) {
+                console.error("Full constraint projection failed in line search:", error);
+                throw error;
+            }
+        } else {
+            console.error("Full constraint projection is required");
+            throw new Error("Full constraint projection must be enabled");
+        }
         
         // Check if step is acceptable
         const newEnergy = calculateDiscreteEnergy(newVertices, edges, alpha, beta, disjointPairs);
+        console.log(`New energy: ${newEnergy.toFixed(6)}, change: ${(currentEnergy - newEnergy).toFixed(6)}`);
+        
         if (newEnergy <= currentEnergy + sufficientDecrease * t * slope) {
-            console.log(`Line search converged at t=${t}, energy change: ${currentEnergy - newEnergy}`);
+            console.log(`Line search converged at t=${t}, energy change: ${(currentEnergy - newEnergy).toFixed(6)}`);
             return newVertices;
         }
         
@@ -143,7 +214,7 @@ function performLineSearch(
     }
     
     console.warn('Line search did not converge, using smallest step size');
-    return newVertices;
+    return newVertices || vertices.map(v => [...v]);
 }
 
 /**
@@ -156,9 +227,19 @@ function performLineSearch(
  * @returns {Array} - New vertex positions
  */
 function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
+    console.log("Taking gradient descent step");
+    console.log("Edges in gradientDescentStep:", edges);
+    console.log("Edges structure in gradientDescentStep:", JSON.stringify(edges));
+    console.log("Edge count:", edges.length);
+    
     // Get configuration
     const useLineSearch = get(config).useLineSearch;
     const constraints = optimizationConfig.constraints;
+    
+    // Create constraint data for projection
+    const constraintData = createConstraintData(vertices, constraints, edges);
+    console.log(`Active constraints: ${Object.keys(constraints).filter(k => constraints[k]).join(', ')}`);
+    console.log(`Constraint values: [${constraintData.values.join(', ')}]`);
     
     // 1. Compute gradient and direction
     const { gradient, direction, differential } = computeGradient(
@@ -171,12 +252,46 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
     );
     
     // 2. Project gradient onto constraint tangent space (Section 5.3.1 of the paper)
-    const projectedDirection = projectGradientOntoConstraints(
-        direction, 
-        vertices, 
-        edges, 
-        constraints
-    );
+    let projectedDirection;
+    
+    if (optimizationConfig.useFullConstraintProjection && constraintData.values.length > 0) {
+        // Use full saddle point system from the paper
+        console.log("Using full gradient projection");
+        const flatDirection = flattenVectors(direction);
+        
+        // Define parameters for projection
+        const sobolevParams = { alpha, beta };
+        
+        try {
+            // CRITICAL FIX: Pass edges as a separate parameter
+            const projectedFlat = projectGradient(
+                flatDirection,
+                vertices,
+                [...edges],  // Create a fresh copy of edges to avoid any potential mutation
+                constraintData,
+                sobolevParams
+            );
+            
+            // Reshape back to 2D array
+            projectedDirection = reshapeToVectors(projectedFlat);
+        } catch (error) {
+            console.error("Full gradient projection failed:", error);
+            throw new Error("Constraint projection failed: " + error.message);
+        }
+    } else {
+        console.error("Full gradient projection is required");
+        throw new Error("Full gradient projection must be enabled");
+    }
+    
+    // Log the magnitude of the projected direction
+    const dirMagnitude = math.norm(flattenVectors(projectedDirection));
+    console.log(`Projected direction magnitude: ${dirMagnitude.toFixed(6)}`);
+    
+    // If direction is too small, we might be at a local minimum
+    if (dirMagnitude < 1e-10) {
+        console.log("Direction magnitude is near zero, possible local minimum reached");
+        return vertices.map(v => [...v]);  // Return copy of current vertices
+    }
     
     // 3. Take step (either fixed or with line search)
     if (useLineSearch) {
@@ -204,15 +319,46 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
             ? get(config).precondStepSize
             : get(config).l2StepSize;
             
+        console.log(`Taking fixed step with size ${stepSize}`);
         const newVertices = takeFixedStep(vertices, projectedDirection, stepSize);
         
-        // Apply barycenter constraint (Section 5.3.2 of the paper)
-        return applyConstraints(newVertices, edges, constraints);
+        // Apply constraint projection (Section 5.3.2 of the paper)
+        if (optimizationConfig.useFullConstraintProjection && constraintData.values.length > 0) {
+            console.log("Applying full constraint projection after step");
+            
+            // Define parameters for projection
+            const sobolevParams = { alpha, beta };
+            
+            try {
+                // CRITICAL FIX: Pass edges as a separate parameter
+                return projectOntoConstraintSet(
+                    newVertices,
+                    edges,  // Pass edges explicitly
+                    constraints,
+                    constraintData,
+                    sobolevParams
+                );
+            } catch (error) {
+                console.error("Full constraint projection failed after step:", error);
+                throw error;
+            }
+        } else {
+            console.error("Full constraint projection is required");
+            throw new Error("Full constraint projection must be enabled");
+        }
     }
 }
 
 /**
  * Create an optimizer for gradient descent
+ * @param {Array} vertices - Initial vertex positions
+ * @param {Array} edges - Edge connections
+ * @param {number} alpha - Energy parameter
+ * @param {number} beta - Energy parameter
+ * @param {Array} disjointPairs - Disjoint edge pairs
+ * @param {number} maxIterations - Maximum iterations
+ * @param {Function} onUpdate - Callback after each step
+ * @returns {Object} - Optimizer object with methods to control optimization
  */
 export function createOptimizer(
     vertices,
@@ -235,50 +381,90 @@ export function createOptimizer(
         lastEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
     }
 
+    console.log("Creating optimizer with parameters:");
+    console.log(`- Gradient method: ${optimizationConfig.gradientMethod}`);
+    console.log(`- Use full constraint projection: ${optimizationConfig.useFullConstraintProjection}`);
+    console.log(`- Constraints: ${JSON.stringify(optimizationConfig.constraints)}`);
+    console.log(`- Edge count: ${edges.length}`);
+    console.log("Edges structure:", JSON.stringify(edges));
+
     const optimizer = {
         step: () => {
             if (currentIteration < maxIterations) {
-                const newVertices = gradientDescentStep(
-                    vertices,
-                    edges,
-                    alpha,
-                    beta,
-                    disjointPairs
-                );
-                vertices.forEach((v, i) => {
-                    v[0] = newVertices[i][0];
-                    v[1] = newVertices[i][1];
-                });
+                console.log(`\n--- Iteration ${currentIteration + 1}/${maxIterations} ---`);
                 
-                // Update kernel state including subvertices
-                updateKernelState(vertices, edges, alpha, beta, disjointPairs);
-                
-                if (applyPerturbation) {
-                    const newEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
-                    const energyChange = newEnergy - lastEnergy;
-                    
-                    if (Math.abs(energyChange) < (get(config).minEnergyChange || 1e-6)) {
-                        stuckCounter++;
-                        
-                        if (stuckCounter > (get(config).maxStuckIterations || 10)) {
-                            console.log('Optimizer stuck, applying random perturbation');
-                            applyRandomPerturbation(vertices, get(config).perturbationScale || 0.1);
-                            stuckCounter = 0;
-                        }
-                    } else {
-                        stuckCounter = 0;
+                try {
+                    // Ensure edges is a proper array before passing it
+                    if (!Array.isArray(edges)) {
+                        console.error("Edges is not an array:", edges);
+                        throw new Error(`Invalid edges (not an array): ${typeof edges}`);
                     }
                     
-                    lastEnergy = newEnergy;
+                    if (edges.length === 0) {
+                        console.error("Edges array is empty");
+                        throw new Error("Invalid edges (empty array)");
+                    }
+                    
+                    // Verify edge structure
+                    edges.forEach((edge, i) => {
+                        if (!Array.isArray(edge) || edge.length !== 2) {
+                            console.error(`Invalid edge at index ${i}:`, edge);
+                            throw new Error(`Invalid edge format at index ${i}: ${JSON.stringify(edge)}`);
+                        }
+                    });
+                    
+                    const newVertices = gradientDescentStep(
+                        vertices,
+                        edges,
+                        alpha,
+                        beta,
+                        disjointPairs
+                    );
+                    
+                    // Update vertices in place
+                    vertices.forEach((v, i) => {
+                        v[0] = newVertices[i][0];
+                        v[1] = newVertices[i][1];
+                    });
+                    
+                    // Update kernel state including subvertices
+                    updateKernelState(vertices, edges, alpha, beta, disjointPairs);
+                    
+                    if (applyPerturbation) {
+                        const newEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
+                        const energyChange = newEnergy - lastEnergy;
+                        
+                        console.log(`Energy: ${newEnergy.toFixed(6)}, Change: ${energyChange.toFixed(6)}`);
+                        
+                        if (Math.abs(energyChange) < (get(config).minEnergyChange || 1e-6)) {
+                            stuckCounter++;
+                            console.log(`Possibly stuck: counter = ${stuckCounter}/${get(config).maxStuckIterations || 10}`);
+                            
+                            if (stuckCounter > (get(config).maxStuckIterations || 10)) {
+                                console.log('Optimizer stuck, applying random perturbation');
+                                applyRandomPerturbation(vertices, get(config).perturbationScale || 0.1);
+                                stuckCounter = 0;
+                            }
+                        } else {
+                            stuckCounter = 0;
+                        }
+                        
+                        lastEnergy = newEnergy;
+                    }
+                    
+                    currentIteration++;
+                    onUpdate();
+                } catch (error) {
+                    console.error("Error during optimization step:", error);
+                    optimizer.stop();
                 }
-                
-                currentIteration++;
-                onUpdate();
             } else {
+                console.log("Maximum iterations reached, stopping optimizer");
                 optimizer.stop();
             }
         },
         start: () => {
+            console.log("Starting optimization");
             currentIteration = 0;
             stuckCounter = 0;
             
@@ -289,6 +475,7 @@ export function createOptimizer(
             if (!intervalId) intervalId = setInterval(optimizer.step, 20);
         },
         stop: () => {
+            console.log("Stopping optimization");
             if (intervalId) {
                 clearInterval(intervalId);
                 intervalId = null;
@@ -297,6 +484,7 @@ export function createOptimizer(
         // Update gradient method
         setGradientMethod: (method) => {
             if (Object.values(GRADIENT_METHODS).includes(method)) {
+                console.log(`Changing gradient method to ${method}`);
                 optimizationConfig.gradientMethod = method;
             } else {
                 console.warn(`Unknown gradient method: ${method}`);
@@ -304,10 +492,16 @@ export function createOptimizer(
         },
         // Update constraint settings
         setConstraints: (newConstraints) => {
+            console.log(`Updating constraints: ${JSON.stringify(newConstraints)}`);
             optimizationConfig.constraints = {
                 ...optimizationConfig.constraints,
                 ...newConstraints
             };
+        },
+        // Toggle full constraint projection
+        setUseFullConstraintProjection: (useFullProjection) => {
+            console.log(`Setting full constraint projection: ${useFullProjection}`);
+            optimizationConfig.useFullConstraintProjection = !!useFullProjection;
         },
         // Get current configuration
         getConfig: () => ({...optimizationConfig})
@@ -316,7 +510,13 @@ export function createOptimizer(
     return optimizer;
 }
 
+/**
+ * Apply a small random perturbation to vertices
+ * @param {Array} vertices - Vertex positions to perturb
+ * @param {number} scale - Scale factor for perturbation
+ */
 function applyRandomPerturbation(vertices, scale) {
+    console.log(`Applying random perturbation with scale ${scale}`);
     for (const vertex of vertices) {
         vertex[0] += (Math.random() - 0.5) * scale;
         vertex[1] += (Math.random() - 0.5) * scale;

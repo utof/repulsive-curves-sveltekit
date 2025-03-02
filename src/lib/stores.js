@@ -10,14 +10,14 @@ export const config = writable({
 	bConst: 0.5,
 	constraintTolerance: 1e-4,
 	differentialMethod: 'finiteDifference',
-    precondStepSize: 0.5,
+    precondStepSize: 4.5,
     l2StepSize: 100000,
     applyPerturbation: false,
     subvertexGap: 100, // Desired gap distance between subvertices (pixels)
-    useSubverticesInEnergy: false, // Whether to include subvertices in energy calculations
+    useSubverticesInEnergy: true, // Whether to include subvertices in energy calculations
     useLineSearch: false, // Whether to use line search for step size optimization
 	maxLineSearch: 20,
-    maxConstraintIterations: 10,
+    maxConstraintIterations: 3,
 });
 
 export const vertices = writable([]); // Supervertices
