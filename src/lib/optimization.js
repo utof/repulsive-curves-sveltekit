@@ -5,17 +5,17 @@ import {
     calculateDiscreteEnergy,
     calculateDiscreteEnergyWithSubvertices
 } from '$lib/energyCalculations';
-import { computePreconditionedGradient, build_A_bar_2D } from '$lib/innerProduct';
+import { computePreconditionedGradient } from '$lib/innerProduct';
 import * as math from 'mathjs';
 import { get } from 'svelte/store';
-import { config, optimizationConfig, initialTotalLength } from '$lib/stores';
+import { config, optimizationConfig, initialTotalLength, initialEdgeLengths } from '$lib/stores';
 import { updateKernelState } from '$lib/graphState';
 import { calculateTotalLength } from '$lib/constraints';
 
 // Import the constraint functionality
 import { 
     createConstraintData
-} from '$lib/constraints';
+} from '$lib/constraintJacobian';
 
 // Import constraint projection operations
 import {
@@ -234,7 +234,9 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
         barycenterTarget: optConfig.constraints.barycenter.target,
         length: optConfig.constraints.length.enabled,
         lengthTarget: optConfig.constraints.length.usePercentage ? undefined : optConfig.constraints.length.absoluteValue,
-        lengthPercentage: optConfig.constraints.length.usePercentage ? optConfig.constraints.length.percentage : undefined
+        lengthPercentage: optConfig.constraints.length.usePercentage ? optConfig.constraints.length.percentage : undefined,
+        edgeLength: optConfig.constraints.edgeLength.enabled,
+        edgeLengthTargets: optConfig.constraints.edgeLength.preserveInitial ? get(initialEdgeLengths) : optConfig.constraints.edgeLength.targets
     };
     
     // Create constraint data for projection
@@ -409,6 +411,8 @@ export function createOptimizer(
     const initTotalLength = calculateTotalLength(vertices, edges);
     initialTotalLength.set(initTotalLength);
     console.log(`Initial total curve length: ${initTotalLength}`);
+    const initialEdgeLens = initializeEdgeLengths(vertices, edges);
+    console.log(`Stored initial edge lengths: [${initialEdgeLens.map(l => l.toFixed(2)).join(', ')}]`);
 
     const configValues = get(config);
     const applyPerturbation = configValues.applyPerturbation;
@@ -554,6 +558,12 @@ export function createOptimizer(
                         usePercentage: newConstraints.lengthPercentage !== undefined,
                         percentage: newConstraints.lengthPercentage ?? config.constraints.length.percentage,
                         absoluteValue: newConstraints.lengthTarget ?? config.constraints.length.absoluteValue
+                    },
+                    // Add edge length constraints
+                    edgeLength: {
+                        enabled: newConstraints.edgeLength ?? config.constraints.edgeLength.enabled,
+                        preserveInitial: newConstraints.preserveInitialEdgeLengths ?? config.constraints.edgeLength.preserveInitial,
+                        targets: newConstraints.edgeLengthTargets ?? config.constraints.edgeLength.targets
                     }
                 }
             }));
@@ -612,4 +622,15 @@ function applyRandomPerturbation(vertices, scale) {
         vertex[0] += (Math.random() - 0.5) * scale;
         vertex[1] += (Math.random() - 0.5) * scale;
     }
+}
+
+export function initializeEdgeLengths(vertices, edges) {
+    const edgeLengths = [];
+    for (const [v1, v2] of edges) {
+        const dx = vertices[v2][0] - vertices[v1][0];
+        const dy = vertices[v2][1] - vertices[v1][1];
+        edgeLengths.push(Math.sqrt(dx*dx + dy*dy));
+    }
+    initialEdgeLengths.set(edgeLengths);
+    return edgeLengths;
 }

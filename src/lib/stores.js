@@ -10,7 +10,7 @@ export const config = writable({
     finiteDiffH: 1e-7,
     constraintTolerance: 1e-4,
     differentialMethod: 'finiteDifference',
-    maxConstraintIterations: 10,
+    maxConstraintIterations: 30,
 
     barycenterScaling: 1,
     lengthScaling: 1,
@@ -44,7 +44,7 @@ export const optimizationConfig = writable({
     
     // Step size control
     useLineSearch: false,
-    precondStepSize: 1e-1,
+    precondStepSize: 1e+2,
     l2StepSize: 100000,
     
     // Constraint settings
@@ -59,13 +59,18 @@ export const optimizationConfig = writable({
             percentage: 100,
             absoluteValue: 0
         },
+        edgeLength: {
+            enabled: true,
+            preserveInitial: true,  // When true, use initial edge lengths as targets
+            targets: []  // Custom target lengths for each edge (if preserveInitial is false)
+        }
         // Future constraint types can be added here
     },
     
     // Constraint implementation
     useFullConstraintProjection: true,
     
-    // Constraint stabilization factors
+    // Constraint stabilization factors DEPRECATED TO-DELETE FROM HERE AND CONTROLS
     barycenterStabilization: 0.01,
     lengthStabilization: 1,
     
@@ -78,6 +83,7 @@ export const vertices = writable([]); // Supervertices
 export const edges = writable([]);
 export const subvertices = writable([]); // Subvertices
 export const initialTotalLength = writable(0);
+export const initialEdgeLengths = writable([]);
 
 // Kernel data and energy
 export const kernelData = writable({

@@ -36,7 +36,7 @@
 	let optimizer;
 	let cleanupInteractions = () => {};
 	let isOptimizing = false;
-	let graphType = 'bipartite';
+	let graphType = 'simple';
 	const width = 700;
 	const height = 700;
 	let controlsComponent;
