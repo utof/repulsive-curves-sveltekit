@@ -137,3 +137,43 @@ export function generate2x3BipartiteGraph(width, height) {
 	const subvertices = generateSubvertices(vertices, edges);
 	return { vertices, edges, subvertices };
 }
+
+export function generateSimpleSquareGraph(width, height) {
+	const vertices = [
+		[width * 0.3, height * 0.3],
+		[width * 0.7, height * 0.3],
+		[width * 0.7, height * 0.7],
+		[width * 0.3, height * 0.7]
+	];
+
+	const edges = [
+		[0, 1],
+		[1, 2],
+		[2, 3],
+		[3, 0]
+	];
+
+	const subvertices = generateSubvertices(vertices, edges);
+	return { vertices, edges, subvertices };
+}
+
+export function generateCompleteSquareGraph(width, height) {
+	const vertices = [
+		[width * 0.3, height * 0.3],
+		[width * 0.7, height * 0.3],
+		[width * 0.7, height * 0.7],
+		[width * 0.3, height * 0.7]
+	];
+
+	const edges = [
+		[0, 1],
+		[0, 2],
+		[0, 3],
+		[1, 2],
+		[1, 3],
+		[2, 3]
+	];
+
+	const subvertices = generateSubvertices(vertices, edges);
+	return { vertices, edges, subvertices };
+}

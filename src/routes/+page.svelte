@@ -6,7 +6,9 @@
 	import {
 		generateRandomGraph,
 		generateBipartiteGraph,
-		generate2x3BipartiteGraph
+		generate2x3BipartiteGraph,
+		generateCompleteSquareGraph,
+		generateSimpleSquareGraph
 	} from '$lib/graphUtils';
 	import { setupInteractions } from '$lib/interaction';
 	import { initializeKernelState, updateKernelState } from '$lib/graphState';
@@ -102,6 +104,18 @@
 				edges: newEdges,
 				subvertices: newSubvertices
 			} = generate2x3BipartiteGraph(width, height));
+		} else if (graphType === 'square') {
+			({
+				vertices: newVertices,
+				edges: newEdges,
+				subvertices: newSubvertices
+			} = generateCompleteSquareGraph(width, height));
+		} else if (graphType === 'simple') {
+			({
+				vertices: newVertices,
+				edges: newEdges,
+				subvertices: newSubvertices
+			} = generateSimpleSquareGraph(width, height));
 		}
 		$vertices = newVertices;
 		$edges = newEdges;
