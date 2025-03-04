@@ -36,7 +36,7 @@
 	let optimizer;
 	let cleanupInteractions = () => {};
 	let isOptimizing = false;
-	let graphType = 'simple';
+	let graphType = 'square';
 	const width = 700;
 	const height = 700;
 	let controlsComponent;

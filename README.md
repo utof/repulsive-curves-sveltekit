@@ -1,28 +1,35 @@
-thoughts:
+# QUESTIONS (and out-there ideas)
 
-wtf even L2 is getting stuck. something is up with the gradients.
-but wtf does barycenter do. i think it doesnt work.
-Remove THE LINE SEARCH
+- ~~project constraints kinda works but how does it work~~
 
-# QUESTIONS:
+- what if find the subvertices that cause the most amount of energy (the intersecting ones) and kinda disable them to allow nonplanar graphs to not be crazy? 
 
-WHAT IS LINE SEARCH??
-project constraints kinda works but how does it work
-
-what if find the subvertices that cause the most amount of energy (the intersecting ones) and kinda disable them to allow nonplanar graphs to not be crazy? 
+### thoughts:
+- ~~wtf even L2 is getting stuck. something is up with the gradients.~~
+- ~~Remove THE LINE SEARCH~~
+- [ ] wanna have a nice archive of the struckthrough stuff to see my progress and see how my understanding of the project changes
 
 
 
 
-# todo:
 
-## plugin system
+# todo
 
-[ ] ability to define a constraint
+### for my own sake
+- [ ] WHAT IS LINE SEARCH??
+- [ ] understand exactly how barycenter works
+  - [ ] same for constraint-jacobian making
+  - [ ] 
+
+### plugin system/modularity/microserviceness
+
+- [ ] ability to define a constraint
+
+
 
 ### logic
 
-[ ] fix analytical by giving only cpp + js files. upd 2/25/25 what??
+- [ ] fix analytical derivative by giving only cpp + js files to gpt prompt
 
 console log only every 1 sec or at the end of operations
 
@@ -30,23 +37,25 @@ console log only every 1 sec or at the end of operations
 2. store? or something for avoiding prop drilling
 
 constraint to never exceed total length of the graph?
-[ ] api
+- [ ] api
 
 ### controls and config
 
 - [ ] alpha, beta slider.
-      -- [ ] some auto way to determine parameters
+      - [ ] some auto way to determine parameters
 - [ ] step-size parameter with saving TO the code from browser.
 - [ ] dont regenerate graph after resaving the code
-      [ ] show dont show kernel
+      - [ ] show dont show kernel
 
 [ ] move controls out of the way
 
 #### config 
-[ ] hardgradcap e.g. 1000 magnitude cap or 100% of the average or something or calculate % based on complexity of vertices and edges
+- [ ] hardgradcap e.g. 1000 magnitude cap or 100% of the average or something or calculate % based on complexity of vertices and edges
+
 ### ui
 
-nicer controls ui
+- [ ] nicer controls ui
+- [ ] logs/errors in the ui not only console (any lib for that?)
 
 
 ### dev experience
