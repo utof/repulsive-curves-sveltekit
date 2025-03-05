@@ -14,7 +14,6 @@
 
 
 # todo
-
 ### for my own sake
 - [ ] WHAT IS LINE SEARCH??
 - [ ] understand exactly how barycenter works
