@@ -1,12 +1,6 @@
 <script>
 	import { createEventDispatcher } from 'svelte';
-	import {
-		config,
-		optimizationConfig,
-		initialTotalLength,
-		currentUser,
-		currentDateTimeUTC
-	} from './stores';
+	import { config, optimizationConfig, initialTotalLength } from './stores';
 	import { GradientMethods } from './optimization';
 	import { get } from 'svelte/store';
 
@@ -215,12 +209,7 @@
 <div class="controls-container">
 	<div class="controls-header">
 		<h3>Optimization Controls</h3>
-		<div class="user-info">
-			<span>User: {$currentUser}</span>
-			<span title={formatDate($currentDateTimeUTC)}>
-				{$currentDateTimeUTC.split(' ')[0]}
-			</span>
-		</div>
+		<div class="user-info"></div>
 	</div>
 
 	<!-- OPTIMIZATION PARAMETERS SECTION -->

@@ -23,9 +23,7 @@
 		config,
 		canvasTransform,
 		initialTotalLength,
-		optimizationConfig,
-		currentDateTimeUTC,
-		currentUser
+		optimizationConfig
 	} from '$lib/stores';
 	import { calculateTotalLength } from '$lib/constraints';
 	import { get } from 'svelte/store';
@@ -203,10 +201,7 @@
 <div class="app-container">
 	<header class="app-header">
 		<h1>Tangent-Point Energy Optimization</h1>
-		<div class="user-info">
-			<span class="user-name">User: {$currentUser}</span>
-			<span class="date-time">{$currentDateTimeUTC}</span>
-		</div>
+		<div class="user-info"></div>
 	</header>
 
 	<div class="visualization-container">

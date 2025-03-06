@@ -4,6 +4,7 @@ import { GradientMethods } from './optimization'; // Import gradient method cons
 
 // Numerical parameters and basic configuration
 export const config = writable({
+    dim: 2,
     // Numerical stability parameters
     epsilonStability: 1e-7,
     epsilonKernel: 1e-7,
@@ -77,7 +78,7 @@ export const optimizationConfig = writable({
     // Current iteration (used for adaptive strategies)
     currentIteration: 0
 });
-
+export const is3D = derived(config, $config => $config.dim === 3);
 // Vertex and edge data
 export const vertices = writable([]); // Supervertices
 export const edges = writable([]);
@@ -111,7 +112,3 @@ export const userPreferences = writable({
     showAdvancedOptions: false,
     darkMode: false,
 });
-
-// Current date and username for logging
-export const currentDateTimeUTC = writable("2025-03-02 15:21:29");
-export const currentUser = writable("utof");
