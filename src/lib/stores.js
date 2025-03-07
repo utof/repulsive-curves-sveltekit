@@ -1,17 +1,16 @@
 // src/lib/stores.js
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { GradientMethods } from './optimization'; // Import gradient method constants
 
 // Numerical parameters and basic configuration
 export const config = writable({
-    dim: 2,
     // Numerical stability parameters
     epsilonStability: 1e-7,
     epsilonKernel: 1e-7,
     finiteDiffH: 1e-7,
     constraintTolerance: 1e-4,
     differentialMethod: 'finiteDifference',
-    maxConstraintIterations: 30,
+    maxConstraintIterations: 1,
 
     barycenterScaling: 1,
     lengthScaling: 1,
@@ -31,6 +30,11 @@ export const config = writable({
     // Subvertex options
     subvertexGap: 100, 
     useSubverticesInEnergy: false,
+
+    // 3D settings
+    dimension: 3, // Default to 2D, can be set to 3 for 3D mode
+    zoomZ: 0.5, // Z-axis scaling factor for visualization
+    defaultZ: 0, // Default Z coordinate for new vertices in 3D mode
 });
 
 // Centralized optimization configuration
@@ -52,16 +56,16 @@ export const optimizationConfig = writable({
     constraints: {
         barycenter: {
             enabled: true,
-            target: [300, 300]
+            target: get(config).dimension === 3 ? [300, 300, 0] : [300, 300]
         },
         length: {
-            enabled: true,
+            enabled: false,
             usePercentage: true,
             percentage: 100,
             absoluteValue: 0
         },
         edgeLength: {
-            enabled: true,
+            enabled: false,
             preserveInitial: true,  // When true, use initial edge lengths as targets
             targets: []  // Custom target lengths for each edge (if preserveInitial is false)
         }
@@ -78,7 +82,7 @@ export const optimizationConfig = writable({
     // Current iteration (used for adaptive strategies)
     currentIteration: 0
 });
-export const is3D = derived(config, $config => $config.dim === 3);
+
 // Vertex and edge data
 export const vertices = writable([]); // Supervertices
 export const edges = writable([]);

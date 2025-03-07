@@ -39,10 +39,6 @@
 	const height = 700;
 	let controlsComponent;
 
-	// Set initial date/time and username
-	currentDateTimeUTC.set('2025-03-02 15:30:03');
-	currentUser.set('utof');
-
 	onMount(() => {
 		graphCtx = graphCanvas.getContext('2d');
 		regenerateGraph();

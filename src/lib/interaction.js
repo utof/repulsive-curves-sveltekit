@@ -1,6 +1,6 @@
 // src/lib/interaction.js
 import { get, writable } from 'svelte/store';
-import { canvasTransform } from '$lib/stores';
+import { canvasTransform, config } from '$lib/stores';
 
 export function setupInteractions(canvas, vertices, updateFn) {
 	let draggingVertex = null;
@@ -11,6 +11,7 @@ export function setupInteractions(canvas, vertices, updateFn) {
 	let lastMouseY = 0;
 	let isSpacePressed = false; // Track Space key state
 	let isCtrlPressed = false; // Track Ctrl key state
+	let isShiftPressed = false; // Track Shift key for potential Z-axis manipulation
 
 	const MIN_ZOOM = 0.1; // Minimum zoom level
 	const MAX_ZOOM = 5.0; // Maximum zoom level
@@ -46,16 +47,29 @@ export function setupInteractions(canvas, vertices, updateFn) {
 
 		// Check for vertex dragging (existing behavior)
 		const { zoom } = get(canvasTransform);
+        const dimension = get(config).dimension;
+        
 		for (let i = 0; i < vertices.length; i++) {
-			const [vx, vy] = vertices[i];
-			const { screenX, screenY } = getScreenCoords(vx, vy);
+			const vertex = vertices[i];
+            
+            // Project 3D vertex to 2D screen coordinates if in 3D mode
+            let screenVertex;
+            if (dimension === 3) {
+                // Only use x,y coordinates for hit detection
+                screenVertex = [vertex[0], vertex[1]];
+            } else {
+                screenVertex = vertex;
+            }
+            
+			const { screenX, screenY } = getScreenCoords(screenVertex[0], screenVertex[1]);
 			const distance = Math.sqrt((mouseX - screenX) ** 2 + (mouseY - screenY) ** 2);
+            
 			if (distance <= 10 / zoom) {
 				// Increased click radius for better hit detection
 				draggingVertex = i;
 				const worldCoords = getWorldCoords(mouseX, mouseY);
-				dragOffsetX = vx - worldCoords.worldX;
-				dragOffsetY = vy - worldCoords.worldY;
+				dragOffsetX = vertex[0] - worldCoords.worldX;
+				dragOffsetY = vertex[1] - worldCoords.worldY;
 				break;
 			}
 		}
@@ -92,7 +106,16 @@ export function setupInteractions(canvas, vertices, updateFn) {
 			newX = Math.max(0, Math.min(canvas.width / zoom, newX));
 			newY = Math.max(0, Math.min(canvas.height / zoom, newY));
 
-			vertices[draggingVertex] = [newX, newY];
+            // For 3D, preserve the z-coordinate when dragging
+            const dimension = get(config).dimension;
+            if (dimension === 3) {
+                // Get current z value
+                const zValue = vertices[draggingVertex][2];
+                vertices[draggingVertex] = [newX, newY, zValue];
+            } else {
+                vertices[draggingVertex] = [newX, newY];
+            }
+			
 			requestAnimationFrame(updateFn); // Use requestAnimationFrame for smoother updates
 		}
 	}
@@ -132,7 +155,27 @@ export function setupInteractions(canvas, vertices, updateFn) {
 			isSpacePressed = true;
 		} else if (event.code === 'ControlLeft' || event.code === 'ControlRight') {
 			isCtrlPressed = true;
-		}
+		} else if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
+			isShiftPressed = true;
+		} else if (event.code === 'KeyZ' && isShiftPressed && draggingVertex !== null) {
+            // Z-axis manipulation when in 3D mode - increase Z with Shift+Z
+            const dimension = get(config).dimension;
+            if (dimension === 3) {
+                const vertex = vertices[draggingVertex];
+                const step = 5.0; // Z adjustment step
+                vertices[draggingVertex] = [vertex[0], vertex[1], vertex[2] + step];
+                requestAnimationFrame(updateFn);
+            }
+        } else if (event.code === 'KeyX' && isShiftPressed && draggingVertex !== null) {
+            // Z-axis manipulation when in 3D mode - decrease Z with Shift+X
+            const dimension = get(config).dimension;
+            if (dimension === 3) {
+                const vertex = vertices[draggingVertex];
+                const step = 5.0; // Z adjustment step
+                vertices[draggingVertex] = [vertex[0], vertex[1], vertex[2] - step];
+                requestAnimationFrame(updateFn);
+            }
+        }
 	}
 
 	function handleKeyUp(event) {
@@ -141,6 +184,8 @@ export function setupInteractions(canvas, vertices, updateFn) {
 			isDraggingCanvas = false; // Stop panning when Space is released
 		} else if (event.code === 'ControlLeft' || event.code === 'ControlRight') {
 			isCtrlPressed = false;
+		} else if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
+			isShiftPressed = false;
 		}
 	}
 

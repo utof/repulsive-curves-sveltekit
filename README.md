@@ -1,8 +1,11 @@
-# QUESTIONS (and out-there ideas)
+# QUESTIONS (and random bs)
 
 - ~~project constraints kinda works but how does it work~~
 
 - what if find the subvertices that cause the most amount of energy (the intersecting ones) and kinda disable them to allow nonplanar graphs to not be crazy? 
+- in innerProduct, should the determinant be `math.det([diff, edgeTangents[I]]);` or `math.det([edgeTangents[I], diff])`?????
+- flattening and unflattening of computePreconditionedGradient should be more declarative pls
+- dont sort subvertices in energycalculation, that needs redefinition of subvs i guess -> redef of graphutils and graphdrawing
 
 ### thoughts:
 - ~~wtf even L2 is getting stuck. something is up with the gradients.~~
@@ -77,4 +80,30 @@ constraint to never exceed total length of the graph?
 		           ((p2[2] || 0) - (p1[2] || 0)) : undefined;
 ```
 
-[ ] is there a way to define generally subvertices, curvature of subedges etc.? Like an api/class that will have properties e.g. drawInfo Position, relativeness of motion, extensionness of graphs.
+- [ ] is there a way to define generally subvertices, curvature of subedges etc.? Like an api/class that will have properties e.g. drawInfo Position, relativeness of motion, extensionness of graphs.
+- [ ] constraints.js has these type of shit too often :down:    so define a function to loop thru the edges and find a length with err handling (or better, use ts)
+```javascript
+    for (let i = 0; i < edges.length; i++) {
+        const [v1, v2] = edges[i];
+        const v1Pos = vertices[v1];
+        const v2Pos = vertices[v2];
+        
+        // Skip if vertices don't exist
+        if (!v1Pos || !v2Pos) {
+            constraintValues.push(0);
+            console.error(`Edge ${i} has missing vertices`);
+            continue;
+        }
+        
+        // Calculate edge length
+        let squaredDist = 0;
+        for (let d = 0; d < dimension; d++) {
+            const diff = v2Pos[d] - v1Pos[d];
+            squaredDist += diff * diff;
+        }
+        const currentLength = Math.sqrt(squaredDist);
+    }
+```
+#### etc slight optimizations
+
+[ ] no need for cross in 3d case in e.g. tangent-point kernel cuz the norm of it is gonna be taken anyway, so it's the same as taking the determinant in 2d case(???)

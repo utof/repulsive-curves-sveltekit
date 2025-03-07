@@ -23,6 +23,7 @@ function build_weights(alpha, beta, edges, disjointPairs, vertices, edgeTangents
 	const edge_num = edges.length;
 	const s = (beta - 1) / alpha; // Fractional order s from the paper
 	const sigma = s - 1; // Correct sigma = s - 1 (Section 4.2.2)
+    const dimension = get(config).dimension;
 
 	const W = math.zeros(edge_num, edge_num);
 	const W0 = math.zeros(edge_num, edge_num);
@@ -49,8 +50,17 @@ function build_weights(alpha, beta, edges, disjointPairs, vertices, edgeTangents
 					const alph = 2;
 					const bet = 4;
 
-					const cross = math.det([diff, edgeTangents[I]]); // 2D cross product
-					const cross_norm = Math.abs(cross); // Use absolute value for 2D
+                    // Calculate cross product based on dimension
+                    let cross_norm;
+                    if (dimension === 3) {
+                        // For 3D, use standard cross product
+                        const crossProduct = math.cross(edgeTangents[I], diff);
+                        cross_norm = math.norm(crossProduct);
+                    } else {
+                        // For 2D, use determinant-based cross product
+                        const det = math.det([edgeTangents[I], diff]); // 2D cross product
+                        cross_norm = Math.abs(det);
+                    }
 
 					const k_numerator = Math.pow(cross_norm, alph);
 					const k_denominator = Math.pow(diff_norm, bet);
@@ -126,7 +136,7 @@ function calculateHighOrderTerm(vertices, edges, W, edgeLengths, edgeTangents) {
 			const T_I = edgeTangents[I];
 			const T_J = edgeTangents[J];
 			const w_IJ = W.get([I, J]);
-			const dot_TI_TJ = math.dot(T_I, T_J); // 2D dot product
+			const dot_TI_TJ = math.dot(T_I, T_J);
 
 			for (let a = 0; a < 2; a++) {
 				for (let b = 0; b < 2; b++) {
@@ -184,10 +194,16 @@ export function calculateDiscreteInnerProduct(vertices, edges, alpha, beta) {
 	return { A_reg, B0, B };
 }
 
-export function build_A_bar_2D(alpha, beta, vertices, edges) {
+/**
+ * Builds the block-diagonal matrix A_bar for both 2D and 3D -- do not delete these types of comments EVER!!!
+ * For 2D, A_bar is a 2|V| × 2|V| matrix
+ * For 3D, A_bar is a 3|V| × 3|V| matrix
+ */
+export function build_A_bar(alpha, beta, vertices, edges) {
 	const { edgeLengths, edgeTangents } = calculateEdgeProperties(vertices, edges);
 	const disjointEdges = calculateDisjointEdgePairs(edges);
 	const numVertices = vertices.length;
+    const dimension = get(config).dimension;
 
 	const { W, W0 } = build_weights(
 		alpha,
@@ -207,17 +223,28 @@ export function build_A_bar_2D(alpha, beta, vertices, edges) {
 	const reg = math.multiply(epsilon, math.identity(numVertices));
 	A = math.add(A, reg);
 
-	// Build 2D block-diagonal A_bar
-	const A_bar = math.zeros(2 * numVertices, 2 * numVertices);
-	A_bar.subset(math.index(math.range(0, numVertices), math.range(0, numVertices)), A);
-	A_bar.subset(
-		math.index(math.range(numVertices, 2 * numVertices), math.range(numVertices, 2 * numVertices)),
-		A
-	);
+	// Build block-diagonal A_bar with correct dimensions
+    const A_bar = math.zeros(dimension * numVertices, dimension * numVertices);
+    
+    // Fill the diagonal blocks with A
+    for (let d = 0; d < dimension; d++) {
+        const start = d * numVertices;
+        const end = (d + 1) * numVertices;
+        A_bar.subset(math.index(math.range(start, end), math.range(start, end)), A);
+    }
 
 	return { A_bar, B, B0 };
 }
 
+// Maintain backward compatibility
+export function build_A_bar_2D(alpha, beta, vertices, edges) {
+    return build_A_bar(alpha, beta, vertices, edges);
+}
+
+/**
+ * Compute preconditioned gradient for optimization
+ * Works with both 2D and 3D
+ */
 export function computePreconditionedGradient(
 	vertices,
 	edges,
@@ -228,8 +255,16 @@ export function computePreconditionedGradient(
 ) {
 	console.log('Computing preconditioned gradient with differential:', differential);
 	const numVertices = vertices.length;
-	const { A_bar } = build_A_bar_2D(alpha, beta, vertices, edges);
-	const differentialFlat = differential.flat();
+    const dimension = get(config).dimension;
+	const { A_bar } = build_A_bar(alpha, beta, vertices, edges);
+    
+    // Flatten the differential from array of arrays to a single array
+	const differentialFlat = [];
+    for (let i = 0; i < numVertices; i++) {
+        for (let d = 0; d < dimension; d++) {
+            differentialFlat.push(differential[i][d]);
+        }
+    }
 
 	let gradFlat;
 	try {
@@ -242,8 +277,12 @@ export function computePreconditionedGradient(
 
 	const gradArray = gradFlat.toArray();
 	const grad = [];
+    // Unflatten gradient back to array of arrays
 	for (let i = 0; i < numVertices; i++) {
-		grad[i] = [gradArray[i * 2], gradArray[i * 2 + 1]];
+        grad[i] = [];
+        for (let d = 0; d < dimension; d++) {
+            grad[i][d] = gradArray[i * dimension + d][0]; // Extract value from matrix format
+        }
 	}
 	console.log('Gradient:', grad);
 	return grad;

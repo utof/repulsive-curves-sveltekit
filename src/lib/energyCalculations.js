@@ -9,6 +9,7 @@ export function calculateEdgeProperties(vertices, edges) {
 	const edgeLengths = [];
 	const edgeTangents = [];
 	const edgeMidpoints = [];
+    const dimension = get(config).dimension;
 
 	for (const edge of edges) {
 		const v1 = vertices[edge[0]];
@@ -18,23 +19,32 @@ export function calculateEdgeProperties(vertices, edges) {
 		if (!v1 || !v2) {
 			console.error('Invalid vertex reference:', edge, 'in vertices:', vertices);
 			edgeLengths.push(0);
-			edgeTangents.push([0, 0]);
-			edgeMidpoints.push([0, 0]);
+			edgeTangents.push(dimension === 3 ? [0, 0, 0] : [0, 0]);
+			edgeMidpoints.push(dimension === 3 ? [0, 0, 0] : [0, 0]);
 			continue;
 		}
 
-		const dx = v2[0] - v1[0];
-		const dy = v2[1] - v1[1];
-		const length = Math.sqrt(dx * dx + dy * dy);
+        // Handle both 2D and 3D cases
+        const diff = [];
+        for (let i = 0; i < dimension; i++) {
+            diff[i] = v2[i] - v1[i];
+        }
+        
+		// Calculate length (works for both 2D and 3D)
+        const length = Math.sqrt(diff.reduce((sum, val) => sum + val * val, 0));
 		edgeLengths.push(length);
 
-		const unitTangent = length > 0 ? [dx / length, dy / length] : [0, 0];
+		// Calculate unit tangent
+        const unitTangent = length > 0 ? 
+            diff.map(d => d / length) : 
+            new Array(dimension).fill(0);
 		edgeTangents.push(unitTangent);
 
-		const midpoint = [
-			isNaN(v1[0]) || isNaN(v2[0]) ? 0 : (v1[0] + v2[0]) / 2,
-			isNaN(v1[1]) || isNaN(v2[1]) ? 0 : (v1[1] + v2[1]) / 2
-		];
+		// Calculate midpoint
+        const midpoint = [];
+        for (let i = 0; i < dimension; i++) {
+            midpoint[i] = isNaN(v1[i]) || isNaN(v2[i]) ? 0 : (v1[i] + v2[i]) / 2;
+        }
 		edgeMidpoints.push(midpoint);
 
 		if (logging) {
@@ -59,19 +69,30 @@ export function tangentPointKernel(p, q, T, alpha, beta) {
 	const q_ = math.matrix(q);
 	const T_ = math.matrix(T);
 	const epsilon = get(config).epsilonKernel;
+    const dimension = get(config).dimension;
 
 	// Calculate the difference vector
 	const diff = math.subtract(p_, q_);
 	const diffNorm = math.norm(diff) + epsilon; // Prevent division by zero
-	const cross2D = T_.get([0]) * diff.get([1]) - T_.get([1]) * diff.get([0]); // 2D cross product (determinant)
+	
+	// Calculate cross product based on dimension
+    let crossMagnitude;
+    if (dimension === 3) {
+        // For 3D, use the standard cross product
+        const crossProduct = math.cross(T_, diff);
+        crossMagnitude = math.norm(crossProduct);
+    } else {
+        // For 2D, use the determinant-based cross product
+        crossMagnitude = Math.abs(math.det([T_, diff]));
+    }
 
-	const numerator = Math.pow(Math.abs(cross2D), alpha);
+	const numerator = Math.pow(crossMagnitude, alpha);
 	const denominator = Math.pow(diffNorm, beta);
 	const result = numerator / denominator;
 
 	// Check for NaN or Infinity
 	if (!isFinite(result)) {
-		console.warn('Invalid kernel result:', result, 'from inputs:', p, q, T, 'with cross2D:', cross2D, 'diffNorm:', diffNorm);
+		console.warn('Invalid kernel result:', result, 'from inputs:', p, q, T, 'with crossMagnitude:', crossMagnitude, 'diffNorm:', diffNorm);
 		return 0;
 	}
 
@@ -185,6 +206,8 @@ export function calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPa
  * @returns {Object} - Combined vertices, edges, and mapping information
  */
 function prepareCombinedVerticesAndEdges(mainVertices, mainEdges, subvs) {
+    const dimension = get(config).dimension;
+    
     // Create a copy of the main vertices
     const combinedVertices = [...mainVertices.map(v => [...v])];
     const mainVertexCount = mainVertices.length;
@@ -196,8 +219,9 @@ function prepareCombinedVerticesAndEdges(mainVertices, mainEdges, subvs) {
         const index = combinedVertices.length;
         combinedVertices.push([...sv.position]); // Clone the position
         
-        // Store subvertex index with a key that identifies both the subvertex and its edge
-        const key = `${sv.edge[0]}-${sv.edge[1]}-${sv.position[0]}-${sv.position[1]}`;
+        // Store subvertex index with a key that identifies both the subvertex and 3D
+        const posKey = sv.position.join('-');
+        const key = `${sv.edge[0]}-${sv.edge[1]}-${posKey}`;
         subVertexIndices.set(key, index);
     }
     
@@ -209,7 +233,8 @@ function prepareCombinedVerticesAndEdges(mainVertices, mainEdges, subvs) {
             edgeToSubvertices.set(edgeKey, []);
         }
         
-        const key = `${sv.edge[0]}-${sv.edge[1]}-${sv.position[0]}-${sv.position[1]}`;
+        const posKey = sv.position.join('-');
+        const key = `${sv.edge[0]}-${sv.edge[1]}-${posKey}`;
         const index = subVertexIndices.get(key);
         if (index !== undefined) {
             edgeToSubvertices.get(edgeKey).push({
@@ -227,8 +252,19 @@ function prepareCombinedVerticesAndEdges(mainVertices, mainEdges, subvs) {
         
         // Sort subvertices by distance from v1
         svList.sort((a, b) => {
-            const distA = Math.sqrt(Math.pow(a.position[0] - v1[0], 2) + Math.pow(a.position[1] - v1[1], 2));
-            const distB = Math.sqrt(Math.pow(b.position[0] - v1[0], 2) + Math.pow(b.position[1] - v1[1], 2));
+            // Distance calculation that works for both 2D and 3D
+            const distA = Math.sqrt(
+                Array.from({ length: dimension }).reduce((sum, _, i) => {
+                    return sum + Math.pow(a.position[i] - v1[i], 2);
+                }, 0)
+            );
+            
+            const distB = Math.sqrt(
+                Array.from({ length: dimension }).reduce((sum, _, i) => {
+                    return sum + Math.pow(b.position[i] - v1[i], 2);
+                }, 0)
+            );
+            
             return distA - distB;
         });
     }
@@ -326,8 +362,12 @@ export function calculateDiscreteEnergyWithSubvertices(vertices, edges, alpha, b
 
 function calculateAnalyticalDifferential(vertices, edges, alpha, beta, disjointPairs) {
    
-    return 'not implemented';}
+    return 'not implemented';
+}
 
+/**
+ * Calculate the energy differential (gradient) with respect to vertex positions
+ */
 export function calculateDifferential(vertices, edges, alpha, beta, disjointPairs) {
     const method = get(config).differentialMethod;
     const useSubvertices = get(config).useSubverticesInEnergy;
@@ -353,14 +393,15 @@ function calculateDifferentialWithSubvertices(vertices, edges, alpha, beta, disj
     const h = get(config).finiteDiffH;
     const numVertices = vertices.length;
     const differential = [];
+    const dimension = get(config).dimension;
 
     // Calculate the original energy with subvertices included
     const E_original = calculateDiscreteEnergyWithSubvertices(vertices, edges, alpha, beta, disjointPairs);
 
     // For each main vertex, calculate partial derivatives
     for (let i = 0; i < numVertices; i++) {
-        differential[i] = [0, 0];
-        for (let dim = 0; dim < 2; dim++) {
+        differential[i] = new Array(dimension).fill(0);
+        for (let dim = 0; dim < dimension; dim++) {
             // Create perturbed vertices array
             const vertices_perturbed = vertices.map((v) => [...v]);
             vertices_perturbed[i][dim] += h;
@@ -385,17 +426,20 @@ function calculateDifferentialWithSubvertices(vertices, edges, alpha, beta, disj
     return differential;
 }
 
+/**
+ * Calculate differential with computed small differences
+ */
 function calculateDifferentialFiniteDifference(vertices, edges, alpha, beta, disjointPairs) {
-    // Existing finite difference implementation
     const h = get(config).finiteDiffH;
     const numVertices = vertices.length;
     const differential = [];
+    const dimension = get(config).dimension;
 
     const E_original = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
 
     for (let i = 0; i < numVertices; i++) {
-        differential[i] = [0, 0];
-        for (let dim = 0; dim < 2; dim++) {
+        differential[i] = new Array(dimension).fill(0);
+        for (let dim = 0; dim < dimension; dim++) {
             const vertices_perturbed = vertices.map((v) => [...v]);
             vertices_perturbed[i][dim] += h;
             const E_perturbed = calculateDiscreteEnergy(
@@ -412,29 +456,4 @@ function calculateDifferentialFiniteDifference(vertices, edges, alpha, beta, dis
         console.log('Computed differential:', differential);
     }
     return differential;
-}
-
-function calculateL2Gradient(vertices, edges, alpha, beta, disjointPairs) {
-	const h = get(config).finiteDiffH; // Use config finiteDiffH
-	const numVertices = vertices.length;
-	const gradient = [];
-
-	const originalEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
-
-	for (let i = 0; i < numVertices; i++) {
-		gradient[i] = [0, 0];
-
-		for (let j = 0; j < 2; j++) {
-			const originalValue = vertices[i][j];
-			vertices[i][j] += h;
-
-			const newEnergy = calculateDiscreteEnergy(vertices, edges, alpha, beta, disjointPairs);
-
-			gradient[i][j] = (newEnergy - originalEnergy) / h;
-
-			vertices[i][j] = originalValue;
-		}
-	}
-
-	return gradient;
 }
