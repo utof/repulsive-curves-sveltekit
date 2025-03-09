@@ -245,11 +245,12 @@
 				</div>
 			</div>
 
-			<Controls
+			<!-- commented out cuz not working cuz of deprecated features 
+            <Controls
 				on:update={updateVisualization}
 				on:alphaBetaChange={handleAlphaBetaChange}
 				bind:this={controlsComponent}
-			/>
+			/> -->
 		</div>
 
 		<div class="graph-section">

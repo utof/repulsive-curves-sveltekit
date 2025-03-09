@@ -55,7 +55,7 @@ export const optimizationConfig = writable({
     // Constraint settings
     constraints: {
         barycenter: {
-            enabled: true,
+            enabled: false,
             target: get(config).dimension === 3 ? [300, 300, 0] : [300, 300]
         },
         length: {

@@ -39,12 +39,12 @@ function flattenVectors(vectors) {
 }
 
 /**
- * Reshape a flattened array back into a 2D array of vectors
+ * Reshape a flattened array back into a nDim array of vectors
  * @param {Array} flat - Flattened 1D array
- * @param {number} dim - Dimension of each vector (2 for 2D)
- * @returns {Array} - 2D array of vectors
+ * @param {number} dim - Dimension of each vector (3 for 3D)
+ * @returns {Array} - nDim array of vectors
  */
-function reshapeToVectors(flat, dim = 2) {
+function reshapeToVectors(flat, dim = 3) {
     const result = [];
     for (let i = 0; i < flat.length; i += dim) {
         result.push(flat.slice(i, i + dim));
@@ -83,7 +83,7 @@ function computeGradient(method, vertices, edges, alpha, beta, disjointPairs) {
                     differential
                 );
                 // Descent direction for preconditioned gradient is negative gradient
-                const direction = gradient.map(([gx, gy]) => [-gx, -gy]);
+                const direction = gradient.map(g => g.map(v => -v));
                 return { gradient, direction, differential };
             } catch (e) {
                 console.warn('Preconditioned gradient failed, falling back to L2 gradient:', e);
@@ -93,8 +93,8 @@ function computeGradient(method, vertices, edges, alpha, beta, disjointPairs) {
         case GradientMethods.L2:
         default:
             // For L2 gradient, the gradient is the differential and direction is negative gradient
-            const gradient = differential.map(([dx, dy]) => [dx, dy]);
-            const direction = gradient.map(([gx, gy]) => [-gx, -gy]);
+            const gradient = differential.map(d => [...d]);
+            const direction = gradient.map(g => g.map(v => -v));
             return { gradient, direction, differential };
     }
 }
@@ -107,10 +107,9 @@ function computeGradient(method, vertices, edges, alpha, beta, disjointPairs) {
  * @returns {Array} - New vertex positions
  */
 function takeFixedStep(vertices, direction, stepSize) {
-    return vertices.map((vertex, i) => [
-        vertex[0] + direction[i][0] * stepSize,
-        vertex[1] + direction[i][1] * stepSize
-    ]);
+    return vertices.map((vertex, i) => 
+        vertex.map((coord, j) => coord + direction[i][j] * stepSize)
+    );
 }
 
 /**
@@ -619,18 +618,17 @@ export function createOptimizer(
 function applyRandomPerturbation(vertices, scale) {
     console.log(`Applying random perturbation with scale ${scale}`);
     for (const vertex of vertices) {
-        vertex[0] += (Math.random() - 0.5) * scale;
-        vertex[1] += (Math.random() - 0.5) * scale;
+        for (let i = 0; i < vertex.length; i++) {
+            vertex[i] += (Math.random() - 0.5) * scale;
+        }
     }
 }
 
 export function initializeEdgeLengths(vertices, edges) {
-    const edgeLengths = [];
-    for (const [v1, v2] of edges) {
-        const dx = vertices[v2][0] - vertices[v1][0];
-        const dy = vertices[v2][1] - vertices[v1][1];
-        edgeLengths.push(Math.sqrt(dx*dx + dy*dy));
-    }
+    const edgeLengths = edges.map(([v1, v2]) => 
+        Math.sqrt(vertices[v1].reduce((sum, coord, i) => 
+            sum + Math.pow(vertices[v2][i] - coord, 2), 0))
+    );
     initialEdgeLengths.set(edgeLengths);
     return edgeLengths;
 }
