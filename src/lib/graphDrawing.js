@@ -1,6 +1,6 @@
 // src/lib/graphDrawing.js
 import * as math from 'mathjs';
-import { drawArrow } from '$lib/graphUtils';
+import { drawArrow, project3Dto2D } from '$lib/graphUtils';
 import { calculateDifferential } from '$lib/energyCalculations';
 import { canvasTransform, subvertices, config } from '$lib/stores';
 import { get } from 'svelte/store';
@@ -20,6 +20,7 @@ export function drawGraph(
 	const { offsetX, offsetY, zoom } = get(canvasTransform);
 	const subs = get(subvertices);
     const useSubverticesInEnergy = get(config).useSubverticesInEnergy;
+    const dimension = get(config).dimension;
 
 	ctx.save();
 	ctx.clearRect(0, 0, width, height);
@@ -27,10 +28,10 @@ export function drawGraph(
 	ctx.scale(zoom, zoom);
 	ctx.translate(offsetX / zoom, offsetY / zoom);
 
-	drawEdges(ctx, vertices, edges, kernelMatrix);
-	drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs);
-	drawMidpoints(ctx, edges, edgeProps);
-	drawSubvertices(ctx, subs, useSubverticesInEnergy);
+	drawEdges(ctx, vertices, edges, kernelMatrix, dimension);
+	drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs, dimension);
+	drawMidpoints(ctx, edges, edgeProps, dimension);
+	drawSubvertices(ctx, subs, useSubverticesInEnergy, dimension);
     
     // Draw energy inclusion status
     ctx.save();
@@ -40,7 +41,7 @@ export function drawGraph(
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText(
-        `Energy includes ${useSubverticesInEnergy ? 'both vertices and subvertices' : 'only vertices'}`, 
+        `Mode: ${dimension}D | Energy includes ${useSubverticesInEnergy ? 'both vertices and subvertices' : 'only vertices'}`, 
         10, 10
     );
     ctx.restore();
@@ -48,7 +49,7 @@ export function drawGraph(
 	ctx.restore();
 }
 
-function drawEdges(ctx, vertices, edges, kernelMatrix) {
+function drawEdges(ctx, vertices, edges, kernelMatrix, dimension) {
 	const { zoom } = get(canvasTransform);
 
 	if (kernelMatrix && math.isMatrix(kernelMatrix) && kernelMatrix.size()[0] === edges.length) {
@@ -67,35 +68,112 @@ function drawEdges(ctx, vertices, edges, kernelMatrix) {
 			ctx.strokeStyle = `rgb(${red}, 0, ${blue})`;
 			ctx.lineWidth = (1 + normalizedValue * 4) / zoom;
 
+			// Draw edges with proper projection if in 3D mode
+			const v1 = vertices[edge[0]];
+			const v2 = vertices[edge[1]];
+			
+			let p1, p2;
+			if (dimension === 3) {
+				p1 = project3Dto2D(v1);
+				p2 = project3Dto2D(v2);
+			} else {
+				p1 = v1;
+				p2 = v2;
+			}
+
 			ctx.beginPath();
-			ctx.moveTo(vertices[edge[0]][0], vertices[edge[0]][1]);
-			ctx.lineTo(vertices[edge[1]][0], vertices[edge[1]][1]);
+			ctx.moveTo(p1[0], p1[1]);
+			ctx.lineTo(p2[0], p2[1]);
 			ctx.stroke();
+			
+			// If 3D, add depth cueing by adjusting opacity based on average Z
+			if (dimension === 3) {
+				const avgZ = (v1[2] + v2[2]) / 2;
+				const zMin = -100; // Adjust these based on your scale
+				const zMax = 100;
+				// Make edges with higher Z more opaque (closer to viewer)
+				const opacity = 0.4 + 0.6 * ((avgZ - zMin) / (zMax - zMin));
+				ctx.globalAlpha = Math.max(0.1, Math.min(1, opacity));
+			}
 		});
+		// Reset global alpha
+		ctx.globalAlpha = 1.0;
 	} else {
 		ctx.strokeStyle = 'black';
 		ctx.lineWidth = 1 / zoom;
 		edges.forEach((edge) => {
+			const v1 = vertices[edge[0]];
+			const v2 = vertices[edge[1]];
+			
+			let p1, p2;
+			if (dimension === 3) {
+				p1 = project3Dto2D(v1);
+				p2 = project3Dto2D(v2);
+				
+				// Add depth cueing
+				const avgZ = (v1[2] + v2[2]) / 2;
+				const zMin = -100;
+				const zMax = 100;
+				const opacity = 0.4 + 0.6 * ((avgZ - zMin) / (zMax - zMin));
+				ctx.globalAlpha = Math.max(0.1, Math.min(1, opacity));
+				
+				// Optionally vary line width based on depth
+				const depthScale = 0.5 + ((avgZ - zMin) / (zMax - zMin));
+				ctx.lineWidth = (1 * depthScale) / zoom;
+			} else {
+				p1 = v1;
+				p2 = v2;
+			}
+			
 			ctx.beginPath();
-			ctx.moveTo(vertices[edge[0]][0], vertices[edge[0]][1]);
-			ctx.lineTo(vertices[edge[1]][0], vertices[edge[1]][1]);
+			ctx.moveTo(p1[0], p1[1]);
+			ctx.lineTo(p2[0], p2[1]);
 			ctx.stroke();
 		});
+		// Reset global alpha
+		ctx.globalAlpha = 1.0;
 	}
 }
 
-function drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs) {
+
+function drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs, dimension) {
     const { offsetX, offsetY, zoom } = get(canvasTransform);
     const gradient = calculateDifferential(vertices, edges, alpha, beta, disjointPairs);
 
     vertices.forEach((vertex, i) => {
+        // Project from 3D to 2D if necessary
+        const projectedPoint = dimension === 3 ? project3Dto2D(vertex) : vertex;
+        
+        // Calculate radius based on Z-value for 3D effect
+        let radius = 5 / zoom;
+        if (dimension === 3) {
+            // Use absolute value mapping to ensure positive radius
+            const zMin = -100;
+            const zMax = 100;
+            
+            // Clamp Z value to our range
+            const clampedZ = Math.max(zMin, Math.min(zMax, vertex[2]));
+            
+            // Calculate normalized position (0-1) within our range
+            const zNormalized = (clampedZ - zMin) / (zMax - zMin);
+            
+            // Ensure radius is always positive with a minimum size
+            radius = Math.max(3 / zoom, (3 + 2 * zNormalized) / zoom);
+            
+            // Adjust color based on depth
+            const depthColor = Math.round(128 + 127 * zNormalized);
+            ctx.fillStyle = `rgb(${depthColor}, ${depthColor}, 255)`;
+        } else {
+            ctx.fillStyle = 'blue';
+        }
+        
         ctx.beginPath();
-        ctx.arc(vertex[0], vertex[1], 5 / zoom, 0, 2 * Math.PI);
-        ctx.fillStyle = 'blue';
+        ctx.arc(projectedPoint[0], projectedPoint[1], radius, 0, 2 * Math.PI);
         ctx.fill();
 
-        const screenX = vertex[0] * zoom + offsetX;
-        const screenY = vertex[1] * zoom + offsetY;
+        // Draw label at projected position
+        const screenX = projectedPoint[0] * zoom + offsetX;
+        const screenY = projectedPoint[1] * zoom + offsetY;
 
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -104,26 +182,51 @@ function drawVertices(ctx, vertices, edges, alpha, beta, disjointPairs) {
         ctx.font = '12px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(i.toString(), screenX, screenY - 10);
+        
+        // In 3D mode, add Z coordinate to label
+        if (dimension === 3) {
+            ctx.fillText(`${i} (z:${vertex[2].toFixed(1)})`, screenX, screenY - 10);
+        } else {
+            ctx.fillText(i.toString(), screenX, screenY - 10);
+        }
 
-        const gradX = -gradient[i][0];
-        const gradY = -gradient[i][1];
-        const magnitude = Math.sqrt(gradX * gradX + gradY * gradY) || 1e-6;
-        const screenGradX = gradX * zoom;
-        const screenGradY = gradY * zoom;
+        // Draw gradient direction arrow
+        const gradComponents = gradient[i];
+        const gradX = -gradComponents[0];
+        const gradY = -gradComponents[1];
+        
+        // For 3D, project gradient to 2D plane for visualization
+        let dirX, dirY;
+        if (dimension === 3) {
+            const gradZ = -gradComponents[2];
+            // Simple projection for now
+            dirX = gradX;
+            dirY = gradY;
+            // Add indicator for Z component of gradient
+            ctx.fillText(`∇z:${gradZ.toFixed(2)}`, screenX, screenY + 15);
+        } else {
+            dirX = gradX;
+            dirY = gradY;
+        }
+        
+        const magnitude = Math.sqrt(dirX * dirX + dirY * dirY) || 1e-6;
+        const screenGradX = dirX * zoom;
+        const screenGradY = dirY * zoom;
         const screenMagnitude = Math.sqrt(screenGradX * screenGradX + screenGradY * screenGradY);
         const arrowLength = 20;
-        const dirX = screenGradX / screenMagnitude;
-        const dirY = screenGradY / screenMagnitude;
+        const arrowDirX = screenGradX / screenMagnitude;
+        const arrowDirY = screenGradY / screenMagnitude;
+        
         ctx.strokeStyle = 'purple';
         ctx.lineWidth = 2;
-        drawArrow(ctx, screenX, screenY, dirX, dirY, arrowLength);
+        drawArrow(ctx, screenX, screenY, arrowDirX, arrowDirY, arrowLength);
 
         ctx.restore();
     });
 }
 
-function drawMidpoints(ctx, edges, edgeProps) {
+
+function drawMidpoints(ctx, edges, edgeProps, dimension) {
     const { offsetX, offsetY, zoom } = get(canvasTransform);
 
     if (!edgeProps || !edgeProps.edgeMidpoints || edgeProps.edgeMidpoints.length !== edges.length) {
@@ -137,13 +240,16 @@ function drawMidpoints(ctx, edges, edgeProps) {
 
         if (!midpoint || !length || !tangent) return;
 
+        // Project midpoint if in 3D mode
+        const projectedMidpoint = dimension === 3 ? project3Dto2D(midpoint) : midpoint;
+        
         ctx.fillStyle = 'red';
         ctx.beginPath();
-        ctx.arc(midpoint[0], midpoint[1], 2 / zoom, 0, 2 * Math.PI);
+        ctx.arc(projectedMidpoint[0], projectedMidpoint[1], 2 / zoom, 0, 2 * Math.PI);
         ctx.fill();
 
-        const screenX = midpoint[0] * zoom + offsetX;
-        const screenY = midpoint[1] * zoom + offsetY;
+        const screenX = projectedMidpoint[0] * zoom + offsetX;
+        const screenY = projectedMidpoint[1] * zoom + offsetY;
 
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -152,14 +258,32 @@ function drawMidpoints(ctx, edges, edgeProps) {
         ctx.font = '10px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(`${i}L ${length.toFixed(6)}`, screenX, screenY - 15);
-        ctx.fillText(`T ${tangent.map((t) => t.toFixed(1))}`, screenX, screenY - 5);
+        ctx.fillText(`${i}L ${length.toFixed(2)}`, screenX, screenY - 15);
+        
+        // Show tangent differently based on dimension
+        if (dimension === 3) {
+            ctx.fillText(`T [${tangent.map((t) => t.toFixed(1)).join(',')}]`, screenX, screenY - 5);
+        } else {
+            ctx.fillText(`T ${tangent.map((t) => t.toFixed(1))}`, screenX, screenY - 5);
+        }
+        
         ctx.fillText(`${edge[0]}, ${edge[1]}`, screenX, screenY + 15);
 
+        // Draw tangent direction arrow
         ctx.strokeStyle = 'green';
         ctx.lineWidth = 1.5;
-        const tangentScreenX = tangent[0] * zoom;
-        const tangentScreenY = tangent[1] * zoom;
+        
+        // Project tangent to 2D if needed
+        let projectedTangent;
+        if (dimension === 3) {
+            // Simple projection for now - just use X,Y components
+            projectedTangent = [tangent[0], tangent[1]];
+        } else {
+            projectedTangent = tangent;
+        }
+        
+        const tangentScreenX = projectedTangent[0] * zoom;
+        const tangentScreenY = projectedTangent[1] * zoom;
         const tangentMagnitude = Math.sqrt(tangentScreenX * tangentScreenX + tangentScreenY * tangentScreenY) || 1;
         const dirX = tangentScreenX / tangentMagnitude;
         const dirY = tangentScreenY / tangentMagnitude;
@@ -169,28 +293,42 @@ function drawMidpoints(ctx, edges, edgeProps) {
     });
 }
 
-function drawSubvertices(ctx, subvertices, useInEnergy) {
-	const { zoom } = get(canvasTransform);
 
-	for (const subvertex of subvertices) {
-		const [x, y] = subvertex.position;
+function drawSubvertices(ctx, subvertices, useInEnergy, dimension) {
+    const { zoom } = get(canvasTransform);
+
+    for (const subvertex of subvertices) {
+        // Project subvertex position if in 3D
+        const position = subvertex.position;
+        const projectedPos = dimension === 3 ? project3Dto2D(position) : position;
         
         // Use different colors for subvertices based on whether they're included in energy
         ctx.fillStyle = useInEnergy ? 'purple' : 'black';
         ctx.strokeStyle = useInEnergy ? 'blue' : 'black';
         
-		ctx.beginPath();
-		ctx.arc(x, y, 4 / zoom, 0, 2 * Math.PI);
-		ctx.fill();
+        // Adjust size based on Z-coordinate if in 3D
+        let radius = 4 / zoom;
+        if (dimension === 3 && position.length >= 3) {
+            const zMin = -100;
+            const zMax = 100;
+            const zNormalized = (position[2] - zMin) / (zMax - zMin);
+            const sigmoid = (x) => 1 / (1 + Math.exp(-x / 4)); // TODO: softness of sigmoid based on the range of the z-vals
+            const cappedZ = sigmoid(zNormalized * 6 - 3); // Scale and shift to center sigmoid around 0
+            radius *= Math.max(0.5, cappedZ); // Ensure radius is always positive
+        }
+        
+        ctx.beginPath();
+        ctx.arc(projectedPos[0], projectedPos[1], radius, 0, 2 * Math.PI);
+        ctx.fill();
         
         if (useInEnergy) {
             // Add a halo around subvertices to indicate they're included in energy
             ctx.lineWidth = 1 / zoom;
             ctx.beginPath();
-            ctx.arc(x, y, 7 / zoom, 0, 2 * Math.PI);
+            ctx.arc(projectedPos[0], projectedPos[1], radius + (3 / zoom), 0, 2 * Math.PI);
             ctx.stroke();
         }
-	}
+    }
 }
 
 

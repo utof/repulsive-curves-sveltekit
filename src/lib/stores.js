@@ -8,9 +8,9 @@ export const config = writable({
     epsilonStability: 1e-7,
     epsilonKernel: 1e-7,
     finiteDiffH: 1e-7,
-    constraintTolerance: 1e-4,
+    constraintTolerance: 1e-1,
     differentialMethod: 'finiteDifference',
-    maxConstraintIterations: 1,
+    maxConstraintIterations: 4,
 
     barycenterScaling: 1,
     lengthScaling: 1,
@@ -49,13 +49,13 @@ export const optimizationConfig = writable({
     
     // Step size control
     useLineSearch: false,
-    precondStepSize: 1e+2,
+    precondStepSize: 1e+0,
     l2StepSize: 100000,
     
     // Constraint settings
     constraints: {
         barycenter: {
-            enabled: false,
+            enabled: true,
             target: get(config).dimension === 3 ? [300, 300, 0] : [300, 300]
         },
         length: {
@@ -65,7 +65,7 @@ export const optimizationConfig = writable({
             absoluteValue: 0
         },
         edgeLength: {
-            enabled: false,
+            enabled: true,
             preserveInitial: true,  // When true, use initial edge lengths as targets
             targets: []  // Custom target lengths for each edge (if preserveInitial is false)
         }

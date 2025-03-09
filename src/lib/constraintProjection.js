@@ -2,135 +2,13 @@
 /**
  * Implements constraint projection using the saddle point system
  * Following Sections 5.3.1 and 5.3.2 of the paper
+ * Generalized for both 2D and 3D
  */
 
 import * as math from 'mathjs';
 import { get } from 'svelte/store';
 import { config } from './stores';
-import { build_A_bar_2D } from './innerProduct';
-
-// Numerical stability parameters
-export const ProjectionNumerics = {
-    // Toggle numerical stability measures
-    USE_REGULARIZATION: false,         // Use regularization in saddle point system
-    USE_ROBUST_SOLVER: false,          // Use more robust solver techniques
-    LOG_MATRIX_PROPERTIES: true,      // Log matrix properties for debugging
-    
-    // Parameter values
-    SADDLE_REGULARIZATION: 1e-8,      // Regularization term for saddle point system
-    MIN_PIVOT: 1e-12,                 // Minimum pivot value for direct solver
-    MAX_CORRECTION_NORM: 1000.0,      // Maximum correction norm to prevent explosions
-    DAMPING_FACTOR: 0.5,              // Damping factor for constraint projection
-    CONSTRAINT_TOL: 1e-6              // Tolerance for constraint satisfaction
-};
-
-/**
- * Check the conditioning of a matrix
- * Helps diagnose numerical issues
- * 
- * @param {Array} matrix - Matrix to check
- * @param {string} name - Matrix name for logging
- */
-function checkMatrixConditioning(matrix, name) {
-    if (!ProjectionNumerics.LOG_MATRIX_PROPERTIES) return;
-    
-    console.log(`==== CHECKING MATRIX CONDITIONING: ${name} ====`);
-    
-    try {
-        const mathMatrix = math.matrix(matrix);
-        const size = mathMatrix.size();
-        const rows = size[0];
-        const cols = size.length > 1 ? size[1] : 1;
-        
-        console.log(`Matrix dimensions: ${rows} × ${cols}`);
-        
-        // Find min, max, and mean of absolute values
-        let min = Infinity;
-        let max = 0;
-        let sum = 0;
-        let count = 0;
-        
-        mathMatrix.forEach((value) => {
-            const absValue = Math.abs(value);
-            if (absValue > 0) {
-                min = Math.min(min, absValue);
-                max = Math.max(max, absValue);
-                sum += absValue;
-                count++;
-            }
-        });
-        
-        const mean = count > 0 ? sum / count : 0;
-        console.log(`Non-zero values: min=${min.toExponential(4)}, max=${max.toExponential(4)}, mean=${mean.toExponential(4)}, count=${count}`);
-        
-        // Try to estimate condition number for square matrices
-        if (rows === cols && rows <= 100) { // Limit to small matrices for performance
-            try {
-                // This is expensive and might fail for large or ill-conditioned matrices
-                const eigs = math.eigs(mathMatrix);
-                const eigenvalues = eigs.values;
-                
-                // Get real parts and filter non-zero values
-                const realEigs = eigenvalues.filter(v => Math.abs(v) > 1e-14);
-                
-                if (realEigs.length > 0) {
-                    const minEig = Math.min(...realEigs.map(Math.abs));
-                    const maxEig = Math.max(...realEigs.map(Math.abs));
-                    const condEst = maxEig / minEig;
-                    console.log(`Eigenvalue-based condition number estimate: ${condEst.toExponential(4)}`);
-                    
-                    if (condEst > 1e10) {
-                        console.warn(`Matrix ${name} is likely ill-conditioned!`);
-                    }
-                }
-            } catch (e) {
-                console.log(`Could not compute eigenvalues: ${e.message}`);
-            }
-        } else if (rows === cols) {
-            // For larger matrices, check diagonal dominance as a rough heuristic
-            let isDiagDominant = true;
-            
-            for (let i = 0; i < rows; i++) {
-                const diagValue = Math.abs(matrix[i][i]);
-                let rowSum = 0;
-                
-                for (let j = 0; j < cols; j++) {
-                    if (i !== j) rowSum += Math.abs(matrix[i][j]);
-                }
-                
-                if (diagValue <= rowSum) {
-                    isDiagDominant = false;
-                    break;
-                }
-            }
-            
-            console.log(`Matrix is ${isDiagDominant ? '' : 'not '}diagonally dominant`);
-        }
-        
-        // Check for symmetry in square matrices
-        if (rows === cols) {
-            let isSymmetric = true;
-            let maxAsymmetry = 0;
-            
-            for (let i = 0; i < rows && isSymmetric; i++) {
-                for (let j = i+1; j < cols; j++) {
-                    const diff = Math.abs(matrix[i][j] - matrix[j][i]);
-                    maxAsymmetry = Math.max(maxAsymmetry, diff);
-                    if (diff > 1e-10) {
-                        isSymmetric = false;
-                        break;
-                    }
-                }
-            }
-            
-            console.log(`Matrix is ${isSymmetric ? '' : 'not '}symmetric, max asymmetry: ${maxAsymmetry.toExponential(4)}`);
-        }
-    } catch (error) {
-        console.error(`Error checking matrix conditioning: ${error.message}`);
-    }
-    
-    console.log("======================================");
-}
+import { build_A_bar } from './innerProduct';
 
 /**
  * Solves the saddle point system for constrained optimization
@@ -169,19 +47,7 @@ export function solveSaddlePointSystem(A, C, b, d) {
          * The saddle point system has the form:
          * [ A   C^T ] [ x ] = [ b ]
          * [ C    0  ] [ λ ] = [ d ]
-         * 
-         * For improved numerical stability, we can add a small regularization term:
-         * [ A   C^T ] [ x ] = [ b ]
-         * [ C   -εI ] [ λ ] = [ d ]
          */
-        
-        // Add regularization if enabled
-        const epsilon = ProjectionNumerics.USE_REGULARIZATION ? 
-            ProjectionNumerics.SADDLE_REGULARIZATION : 0;
-        
-        if (epsilon > 0) {
-            console.log(`Using regularization with ε = ${epsilon}`);
-        }
         
         // Build the full saddle point matrix
         const fullSize = n + m;
@@ -213,80 +79,20 @@ export function solveSaddlePointSystem(A, C, b, d) {
             }
         }
         
-        // Fill zeros block with regularization
-        for (let i = 0; i < m; i++) {
-            fullMatrix[n + i][n + i] = -epsilon;
-        }
-        
         // Build full right-hand side vector
         const fullRHS = b.concat(d);
-        
-        // Check matrix conditioning
-        checkMatrixConditioning(fullMatrix, "Saddle Point Matrix");
         
         // Solve the system
         console.log("Solving saddle point system using math.js...");
         
-        let solution;
-        try {
-            // Try direct solver with LU decomposition
-            solution = math.lusolve(fullMatrix, fullRHS);
-            console.log("Solved using LU decomposition");
-        } catch (error) {
-            if (ProjectionNumerics.USE_ROBUST_SOLVER) {
-                console.warn(`LU solver failed: ${error.message}, trying fallback solver`);
-                
-                // Add small value to diagonal for stability if needed
-                for (let i = 0; i < fullSize; i++) {
-                    if (Math.abs(fullMatrix[i][i]) < ProjectionNumerics.MIN_PIVOT) {
-                        const oldValue = fullMatrix[i][i];
-                        fullMatrix[i][i] = Math.sign(oldValue || 1) * ProjectionNumerics.MIN_PIVOT;
-                        console.log(`Reinforced diagonal at (${i},${i}): ${oldValue} -> ${fullMatrix[i][i]}`);
-                    }
-                }
-                
-                // Try again with modified system
-                solution = math.lusolve(fullMatrix, fullRHS);
-                console.log("Solved using LU decomposition with reinforced diagonal");
-            } else {
-                throw error;
-            }
-        }
+        const solution = math.lusolve(fullMatrix, fullRHS);
         
-        let x, lambda;
-        try {
-            // Solution from math.lusolve is a Matrix, convert to array properly
-            const solutionArray = math.matrix(solution).toArray();
-            
-            // Extract x and lambda components
-            x = solutionArray.slice(0, n).map(row => row[0]); // Get first column of each row
-            lambda = solutionArray.slice(n, n + m).map(row => row[0]);
-            
-            // Calculate norms safely
-            const xNorm = math.norm(x);
-            const lambdaNorm = math.norm(lambda);
-            
-            console.log(`Solution found: |x| = ${xNorm.toExponential(4)}, |λ| = ${lambdaNorm.toExponential(4)}`);
-            
-            // Check for unreasonably large values
-            if (xNorm > 1e10 || lambdaNorm > 1e10) {
-                console.warn("Solution has extremely large values, possible numerical issues");
-            }
-        } catch (normError) {
-            console.warn(`Could not calculate solution norms: ${normError.message}`);
-            console.log("Solution extraction failed, trying fallback method");
-            
-            // Fallback extraction method
-            x = [];
-            for (let i = 0; i < n; i++) {
-                x.push(solution[i][0] || 0);
-            }
-            
-            lambda = [];
-            for (let i = 0; i < m; i++) {
-                lambda.push(solution[n+i][0] || 0);
-            }
-        }
+        // Extract x and lambda components
+        const solutionArray = math.matrix(solution).toArray();
+        
+        // Extract x and lambda components
+        const x = solutionArray.slice(0, n).map(row => row[0]); // Get first column of each row
+        const lambda = solutionArray.slice(n, n + m).map(row => row[0]);
         
         console.log("======================================");
         return { x, lambda };
@@ -300,6 +106,7 @@ export function solveSaddlePointSystem(A, C, b, d) {
  * Projects gradient onto constraint tangent space (Section 5.3.1)
  * Solves the optimization problem:
  * min_g̃ ||g̃ - g||²_H^s_γ s.t. Cg̃ = 0
+ * Works for both 2D and 3D
  *
  * @param {Array} gradient - Flattened gradient vector
  * @param {Array} vertices - Vertex positions
@@ -325,7 +132,7 @@ export function projectGradient(gradient, vertices, edges, constraintData, param
         // Build the inner product matrix
         console.log("Building inner product matrix A_bar");
         const verticesCopy = vertices.map(v => [...v]);
-        const result = build_A_bar_2D(
+        const result = build_A_bar(
             params.alpha,
             params.beta,
             verticesCopy,
@@ -360,17 +167,6 @@ export function projectGradient(gradient, vertices, edges, constraintData, param
             new Array(jacobian.length).fill(0) // d = 0 for gradient projection
         );
         
-        // Verify constraint satisfaction
-        const constraintViolation = math.norm(math.multiply(jacobian, projectedGradient));
-        console.log(`Constraint violation after projection: ${constraintViolation.toExponential(4)}`);
-        
-        // Compare with original gradient
-        const originalNorm = math.norm(gradient);
-        const projectedNorm = math.norm(projectedGradient);
-        console.log(`Original gradient norm: ${originalNorm.toExponential(4)}`);
-        console.log(`Projected gradient norm: ${projectedNorm.toExponential(4)}`);
-        console.log(`Relative change: ${((projectedNorm - originalNorm) / originalNorm).toExponential(4)}`);
-        
         console.log("======================================================");
         return projectedGradient;
     } catch (error) {
@@ -384,6 +180,7 @@ export function projectGradient(gradient, vertices, edges, constraintData, param
  * Projects curve back onto constraint set (Section 5.3.2)
  * Solves the optimization problem:
  * min_x ||x||²_H^s_γ s.t. Cx = -Φ(γ̃)
+ * Works for both 2D and 3D
  *
  * @param {Array} vertices - Vertex positions after taking step
  * @param {Array} edges - Edge connections
@@ -410,6 +207,7 @@ export function projectOntoConstraintSet(
     
     // Extract constraint values and Jacobian
     const { values, evaluate, buildJacobian } = constraintData;
+    const dimension = get(config).dimension;
     
     if (!values || values.length === 0) {
         console.log("No constraint values to project, returning original vertices");
@@ -417,21 +215,21 @@ export function projectOntoConstraintSet(
         return vertices.map(v => [...v]);
     }
     
-    console.log(`Initial constraint values: [${values.map(v => v.toExponential(4)).join(', ')}]`);
-    console.log(`Initial constraint violation: ${math.norm(values).toExponential(4)}`);
+    const initialViolation = Array.isArray(values) ? 
+        math.norm(values.filter(v => typeof v === 'number')) : 0;
+    console.log(`Initial constraint violation: ${initialViolation}`);
     
     // Working copy of vertices
     let projectedVertices = vertices.map(v => [...v]);
     
     // Settings from config
-    const tolerance = ProjectionNumerics.CONSTRAINT_TOL;
     const maxIterations = get(config).maxConstraintIterations || 10;
     
     // Track best solution
     let bestVertices = projectedVertices;
-    let bestViolation = math.norm(values);
+    let bestViolation = initialViolation;
     
-    console.log(`Will perform at most ${maxIterations} projection iterations with tolerance ${tolerance}`);
+    console.log(`Will perform at most ${maxIterations} projection iterations`);
     
     // Newton-like iterations as described in Section 5.3.2
     for (let iter = 0; iter < maxIterations; iter++) {
@@ -439,22 +237,13 @@ export function projectOntoConstraintSet(
         
         // Re-evaluate constraint values at current position
         const constraintValues = evaluate(projectedVertices, constraints);
-        const constraintNorm = math.norm(constraintValues);
-        
-        console.log(`Constraint values: [${constraintValues.map(v => v.toExponential(4)).join(', ')}]`);
-        console.log(`Constraint violation: ${constraintNorm.toExponential(4)}`);
+        const constraintNorm = Array.isArray(constraintValues) ? 
+            math.norm(constraintValues.filter(v => typeof v === 'number')) : 0;
         
         // Update best solution if this one is better
         if (constraintNorm < bestViolation) {
             bestViolation = constraintNorm;
             bestVertices = projectedVertices.map(v => [...v]);
-            console.log(`New best solution with violation: ${bestViolation.toExponential(4)}`);
-        }
-        
-        // Check if we're close enough
-        if (constraintNorm < tolerance) {
-            console.log("Constraint projection converged within tolerance");
-            break;
         }
         
         // Update Jacobian at current position
@@ -464,7 +253,7 @@ export function projectOntoConstraintSet(
         try {
             // Build the inner product matrix for the current position
             console.log("Building inner product matrix for constraint projection");
-            const result = build_A_bar_2D(
+            const result = build_A_bar(
                 params.alpha,
                 params.beta,
                 projectedVertices,
@@ -484,74 +273,26 @@ export function projectOntoConstraintSet(
              * Where x is the correction to apply to γ̃ to satisfy the constraints.
              */
             
+            // Ensure all constraint values are numeric for the RHS
+            const safeConstraintValues = Array.isArray(constraintValues) ? 
+                constraintValues.map(v => typeof v === 'number' ? -v : 0) : [];
+            
             // Solve the saddle point system
             console.log("Solving saddle point system for constraint projection");
             const { x: correction } = solveSaddlePointSystem(
                 A_bar,
                 currentJacobian,
-                new Array(projectedVertices.length * 2).fill(0), // b = 0
-                constraintValues.map(v => -v) // d = -Φ(γ̃)
+                new Array(dimension * projectedVertices.length).fill(0), // b = 0
+                safeConstraintValues // d = -Φ(γ̃)
             );
             
-            const correctionNorm = math.norm(correction);
-            console.log(`Correction norm: ${correctionNorm.toExponential(4)}`);
-            
-            // Apply correction with damping if needed
-            let dampingFactor = 1.0;
-            
-            // If correction is too large, apply damping
-            if (correctionNorm > ProjectionNumerics.MAX_CORRECTION_NORM) {
-                const oldFactor = dampingFactor;
-                dampingFactor = ProjectionNumerics.MAX_CORRECTION_NORM / correctionNorm;
-                console.log(`Reducing damping factor due to large correction: ${oldFactor} -> ${dampingFactor}`);
-            }
-            
-            // Always apply some damping for stability
-            if (ProjectionNumerics.DAMPING_FACTOR < 1.0) {
-                dampingFactor *= ProjectionNumerics.DAMPING_FACTOR;
-                console.log(`Applied additional damping, final factor: ${dampingFactor}`);
-            }
-            
-            const verticesBeforeCorrection = projectedVertices.map(v => [...v]);
-            
-            // Apply the correction to vertices
+            // Apply the correction to vertices based on dimension
             for (let i = 0; i < projectedVertices.length; i++) {
-                projectedVertices[i][0] += correction[i * 2] * dampingFactor;
-                projectedVertices[i][1] += correction[i * 2 + 1] * dampingFactor;
-            }
-            
-            // Check if correction made things worse
-            const newConstraintValues = evaluate(projectedVertices, constraints);
-            const newConstraintNorm = math.norm(newConstraintValues);
-            
-            console.log(`After correction, constraint violation: ${newConstraintNorm.toExponential(4)}`);
-            
-            if (newConstraintNorm > constraintNorm * 1.1) { // Allow slight increase to avoid getting stuck
-                console.log(`WARNING: Correction increased violation (${constraintNorm.toExponential(4)} -> ${newConstraintNorm.toExponential(4)}), reverting`);
-                
-                // Try with smaller step
-                const smallerDampingFactor = dampingFactor * 0.5;
-                console.log(`Trying smaller damping factor: ${dampingFactor} -> ${smallerDampingFactor}`);
-                
-                // Reset and try smaller step
-                projectedVertices = verticesBeforeCorrection.map(v => [...v]);
-                
-                // Apply the correction with smaller damping
-                for (let i = 0; i < projectedVertices.length; i++) {
-                    projectedVertices[i][0] += correction[i * 2] * smallerDampingFactor;
-                    projectedVertices[i][1] += correction[i * 2 + 1] * smallerDampingFactor;
-                }
-                
-                // Check again
-                const newSmallConstraintValues = evaluate(projectedVertices, constraints);
-                const newSmallConstraintNorm = math.norm(newSmallConstraintValues);
-                
-                console.log(`With smaller damping, constraint violation: ${newSmallConstraintNorm.toExponential(4)}`);
-                
-                if (newSmallConstraintNorm > constraintNorm) {
-                    console.log(`Smaller correction still increased violation, reverting to previous state`);
-                    projectedVertices = verticesBeforeCorrection;
-                    break; // Stop iterations if we can't make progress
+                for (let d = 0; d < dimension; d++) {
+                    const correctionVal = correction[i * dimension + d];
+                    if (typeof correctionVal === 'number' && isFinite(correctionVal)) {
+                        projectedVertices[i][d] += correctionVal;
+                    }
                 }
             }
             
@@ -564,13 +305,13 @@ export function projectOntoConstraintSet(
     
     // Return best solution
     const finalConstraintValues = evaluate(projectedVertices, constraints);
-    const finalViolation = math.norm(finalConstraintValues);
-    console.log(`Final constraint values: [${finalConstraintValues.map(v => v.toExponential(4)).join(', ')}]`);
-    console.log(`Final constraint violation: ${finalViolation.toExponential(4)}`);
+    const finalViolation = Array.isArray(finalConstraintValues) ? 
+        math.norm(finalConstraintValues.filter(v => typeof v === 'number')) : 0;
+    console.log(`Final constraint violation: ${finalViolation}`);
     
     // If best solution is significantly better, use that instead
     if (finalViolation > bestViolation * 1.1) {
-        console.log(`Final solution (violation=${finalViolation.toExponential(4)}) is worse than best found (violation=${bestViolation.toExponential(4)}), using best found`);
+        console.log(`Final solution is worse than best found, using best found`);
         projectedVertices = bestVertices;
     }
     
