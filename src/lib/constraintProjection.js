@@ -116,11 +116,15 @@ export function solveSaddlePointSystem(A, C, b, d) {
  * @returns {Array} - Projected gradient
  */
 export function projectGradient(gradient, vertices, edges, constraintData, params) {
+    const dimension = get(config).dimension;
     console.log("==== PROJECT GRADIENT ONTO CONSTRAINT TANGENT SPACE ====");
+    console.log(`Current dimension: ${dimension}, vertices: ${vertices.length}`);
+    console.log(`Gradient array length: ${gradient.length} (expected: ${vertices.length * dimension})`);
     console.log("Following Section 5.3.1 of the paper");
     
     // Extract constraint Jacobian
     const { jacobian } = constraintData;
+    console.log(`Constraint Jacobian rows: ${jacobian?.length || 0}, columns: ${jacobian?.[0]?.length || 0}`);
     
     if (!jacobian || jacobian.length === 0) {
         console.log("No constraints to project against, returning original gradient");
@@ -157,6 +161,7 @@ export function projectGradient(gradient, vertices, edges, constraintData, param
         // Compute Ag (A * gradient)
         console.log("Computing Ag for the right-hand side");
         const Ag = math.multiply(A_bar, gradient);
+        console.log(`Ag dimensions: ${Ag.length}`);
         
         // Solve the saddle point system
         console.log("Solving saddle point system for gradient projection");
@@ -166,6 +171,11 @@ export function projectGradient(gradient, vertices, edges, constraintData, param
             Ag,
             new Array(jacobian.length).fill(0) // d = 0 for gradient projection
         );
+        
+        console.log(`Projected gradient length: ${projectedGradient.length} (expected: ${vertices.length * dimension})`);
+        if (projectedGradient.length % dimension !== 0) {
+            console.error(`CRITICAL: Projected gradient length (${projectedGradient.length}) not divisible by dimension (${dimension})!`);
+        }
         
         console.log("======================================================");
         return projectedGradient;

@@ -45,9 +45,21 @@ function flattenVectors(vectors) {
  * @returns {Array} - nDim array of vectors
  */
 function reshapeToVectors(flat, dim = 3) {
+    const dimension = get(config).dimension || dim;
+    
     const result = [];
-    for (let i = 0; i < flat.length; i += dim) {
-        result.push(flat.slice(i, i + dim));
+    if (!flat || !flat.length) {
+        console.error("Cannot reshape empty or undefined array!");
+        return result;
+    }
+    
+    // Verify the array length is consistent with the dimension
+    if (flat.length % dimension !== 0) {
+        console.error(`Flat array length (${flat.length}) is not divisible by dimension (${dimension})!`);
+    }
+    
+    for (let i = 0; i < flat.length; i += dimension) {
+        result.push(flat.slice(i, i + dimension));
     }
     return result;
 }
@@ -284,8 +296,18 @@ function gradientDescentStep(vertices, edges, alpha, beta, disjointPairs) {
                 sobolevParams
             );
             
-            // Reshape back to 2D array
-            projectedDirection = reshapeToVectors(projectedFlat);
+            // Explicitly pass the dimension to ensure correct reshaping
+            const dimension = get(config).dimension;
+            console.log(`Ensuring correct dimension (${dimension}) for reshaping projected gradient (length: ${projectedFlat?.length || 0})`);
+            
+            // Reshape back to 2D array with explicit dimension
+            projectedDirection = reshapeToVectors(projectedFlat, dimension);
+            
+            // Check if the reshaping produced the expected number of vertices
+            if (projectedDirection.length !== vertices.length) {
+                console.error(`Dimension mismatch! Expected ${vertices.length} vertices but got ${projectedDirection.length}`);
+                throw new Error(`Dimension mismatch after projection (expected ${vertices.length} vertices but got ${projectedDirection.length})`);
+            }
         } catch (error) {
             console.error("Full gradient projection failed:", error);
             throw new Error("Constraint projection failed: " + error.message);
